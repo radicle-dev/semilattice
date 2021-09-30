@@ -1,9 +1,27 @@
 #![feature(array_zip)]
-#![cfg_attr(not(feature = "std"), no_std)]
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
+// This is an allocation inefficient PoC. A better design would likely use an
+// arena and immutable-first data structures.
+
+use core::cmp::Ordering;
+
+#[cfg(feature = "btree")]
+pub mod btree;
+#[cfg(feature = "dag")]
+pub mod dag;
+pub mod ord;
 
 // fixme: #[derive(SemiLattice)]
 pub trait SemiLattice {
     fn join(self, rhs: Self) -> Self;
+
+    fn compare(&self, _rhs: &Self) -> Ordering {
+        // this should obviously be removed...
+        Ordering::Less
+    }
 }
 
 impl<T, const N: usize> SemiLattice for [T; N]
@@ -28,39 +46,29 @@ where
     }
 }
 
-#[cfg(feature = "std")]
-mod btree_semilattice {
-    use crate::SemiLattice;
+// This is a "PairLattice" as named in Anna's paper. I consider this name
+// confusing because a pair is typically just a 2-tuple; but this lattice uses
+// the first field as a version guard to determine if it picks or merges its
+// values. When the guard is a map from node IDs to vector clocks, the value
+// exhibits causal consistency.
+pub struct GuardedPair<Guard, Value> {
+    guard: Guard,
+    value: Value,
+}
 
-    use std::collections::btree_map;
-
-    impl<K, V> SemiLattice for btree_map::BTreeMap<K, V>
-    where
-        K: Ord,
-        // Default only because we steal the old value from the map.
-        V: SemiLattice + Default,
-    {
-        fn join(mut self, rhs: Self) -> Self {
-            // Ugh, why is there no linear-time BTreeMap::merge_with ... ????
-            if self.is_empty() {
-                self = rhs;
-            } else {
-                for (k, v) in rhs {
-                    use std::collections::btree_map::Entry;
-                    match self.entry(k) {
-                        Entry::Vacant(ve) => {
-                            ve.insert(v);
-                        }
-                        Entry::Occupied(mut oe) => {
-                            let value = oe.get_mut();
-                            let stolen = core::mem::take(value);
-                            *value = v.join(stolen);
-                        }
-                    }
-                }
-            }
-
-            self
+impl<A, B> SemiLattice for GuardedPair<A, B>
+where
+    A: SemiLattice,
+    B: SemiLattice,
+{
+    fn join(self, rhs: Self) -> Self {
+        match self.guard.compare(&rhs.guard) {
+            Ordering::Less => rhs,
+            Ordering::Greater => self,
+            Ordering::Equal => GuardedPair {
+                guard: self.guard.join(rhs.guard),
+                value: self.value.join(rhs.value),
+            },
         }
     }
 }
@@ -78,85 +86,4 @@ where
         "::fold with an empty iterator."
     ));
     iter.fold(first, SemiLattice::join)
-}
-
-pub mod ord {
-    use core::cmp;
-
-    use crate::SemiLattice;
-
-    #[derive(Debug, Default, PartialOrd, Ord, PartialEq, Eq)]
-    pub struct Min<T>(pub T);
-
-    #[derive(Debug, Default, PartialOrd, Ord, PartialEq, Eq)]
-    pub struct Max<T>(pub T);
-
-    impl<T> SemiLattice for Min<T>
-    where
-        T: cmp::Ord,
-    {
-        fn join(self, rhs: Self) -> Self {
-            Self(self.0.min(rhs.0))
-        }
-    }
-
-    impl<T> SemiLattice for Max<T>
-    where
-        T: cmp::Ord,
-    {
-        fn join(self, rhs: Self) -> Self {
-            Self(self.0.max(rhs.0))
-        }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::{fold, ord::*};
-
-    #[test]
-    #[should_panic]
-    fn empty_fold_panics() {
-        let _ = fold::<Max<i32>, _>([]);
-    }
-
-    #[test]
-    fn min_max_i32_and_str() {
-        assert_eq!(fold([-1, 0, 1].map(Min)), Min(-1));
-        assert_eq!(fold([-1, 0, 1].map(Max)), Max(1));
-        assert_eq!(
-            fold((-1..).into_iter().take(5).map(|x| (Min(x), Max(x)))),
-            (Min(-1), Max(3))
-        );
-        assert_eq!(fold(["Hello world!", "Hello"].map(Min)), Min("Hello"));
-        assert_eq!(
-            fold(["Hello world!", "Hello"].map(Max)),
-            Max("Hello world!")
-        );
-    }
-
-    #[test]
-    #[cfg(feature = "std")]
-    fn map_lattice() {
-        use crate::SemiLattice;
-        use std::collections::BTreeMap;
-
-        let a = BTreeMap::from([
-            ("k1", (Min(0), Max(1))),
-            ("k2", (Min(1), Max(2))),
-            ("k3", (Min(2), Max(3))),
-        ]);
-        let b = BTreeMap::from([
-            ("k1", (Min(3), Max(4))),
-            ("k2", (Min(4), Max(5))),
-            ("k4", (Min(5), Max(6))),
-        ]);
-        let c = BTreeMap::from([
-            ("k1", (Min(0), Max(4))),
-            ("k2", (Min(1), Max(5))),
-            ("k3", (Min(2), Max(3))),
-            ("k4", (Min(5), Max(6))),
-        ]);
-        assert_eq!(a.join(b), c);
-    }
 }
