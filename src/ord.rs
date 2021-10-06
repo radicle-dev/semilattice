@@ -1,51 +1,79 @@
-use core::cmp;
+use core::cmp::{Ord, Ordering, PartialOrd};
 
 use crate::SemiLattice;
 
-#[derive(Debug, Default, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Min<T>(pub T);
 
-#[derive(Debug, Default, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Max<T>(pub T);
+
+impl<T> Default for Min<T>
+where
+    T: num::Bounded,
+{
+    fn default() -> Self {
+        Self(T::max_value())
+    }
+}
+
+impl<T> Default for Max<T>
+where
+    T: num::Bounded,
+{
+    fn default() -> Self {
+        Self(T::min_value())
+    }
+}
+
+impl<T> PartialOrd for Min<T>
+where
+    T: Ord,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        // invert ordering
+        Some(match self.0.cmp(&other.0) {
+            Ordering::Less => Ordering::Greater,
+            Ordering::Greater => Ordering::Less,
+            Ordering::Equal => Ordering::Equal,
+        })
+    }
+}
+
+impl<T> PartialOrd for Max<T>
+where
+    T: Ord,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
 
 impl<T> SemiLattice for Min<T>
 where
-    T: cmp::Ord,
+    T: Ord + num::Bounded,
 {
-    fn join(self, rhs: Self) -> Self {
-        Self(self.0.min(rhs.0))
+    fn join(self, other: Self) -> Self {
+        Self(core::cmp::min(self.0, other.0))
     }
 }
 
 impl<T> SemiLattice for Max<T>
 where
-    T: cmp::Ord,
+    T: Ord + num::Bounded,
 {
-    fn join(self, rhs: Self) -> Self {
-        Self(self.0.max(rhs.0))
+    fn join(self, other: Self) -> Self {
+        Self(core::cmp::max(self.0, other.0))
     }
 }
 
-#[cfg(test)]
-use crate::fold;
-
 #[test]
-#[should_panic]
-fn empty_fold_panics() {
-    let _ = fold::<Max<i32>, _>([]);
-}
+fn check_laws() {
+    use crate::{fold, partially_verify_semilattice_laws};
 
-#[test]
-fn min_max_i32_and_str() {
-    assert_eq!(fold([-1, 0, 1].map(Min)), Min(-1));
-    assert_eq!(fold([-1, 0, 1].map(Max)), Max(1));
-    assert_eq!(
-        fold((-1..).into_iter().take(5).map(|x| (Min(x), Max(x)))),
-        (Min(-1), Max(3))
-    );
-    assert_eq!(fold(["Hello world!", "Hello"].map(Min)), Min("Hello"));
-    assert_eq!(
-        fold(["Hello world!", "Hello"].map(Max)),
-        Max("Hello world!")
-    );
+    partially_verify_semilattice_laws((-5..5).map(Min));
+    partially_verify_semilattice_laws((-5..5).map(Max));
+
+    assert_eq!(fold((-5..5).map(Min)), Min(-5));
+    assert_eq!(fold((-5..5).map(Max)), Max(4));
 }
