@@ -1,6 +1,6 @@
-use crate::{self as semilattice, SemiLattice, SemiLatticeOrd};
+use crate::{self as semilattice, SemiLattice};
 
-#[derive(Clone, Copy, Default, Debug, PartialEq, SemiLattice, SemiLatticeOrd)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, SemiLattice)]
 pub struct Pair<A, B>(pub A, pub B);
 
 #[test]

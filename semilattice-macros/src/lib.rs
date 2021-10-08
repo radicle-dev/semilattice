@@ -5,26 +5,59 @@ use syn::{parse_macro_input, parse_quote, Data, DeriveInput, Fields, GenericPara
 
 #[proc_macro_derive(SemiLattice)]
 pub fn derive_semilattice(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let mut input = parse_macro_input!(input as DeriveInput);
+    let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
 
-    for param in &mut input.generics.params {
-        if let GenericParam::Type(ref mut type_param) = *param {
-            type_param
-                .bounds
-                .push(parse_quote!(semilattice::SemiLattice));
-        }
-    }
+    let semilattice_impl = {
+        let mut generics = input.generics.clone();
 
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let join = semilattice_join(&input.data);
-
-    quote!(
-        impl #impl_generics semilattice::SemiLattice for #name #ty_generics #where_clause {
-            fn join(self, other: Self) -> Self {
-                #join
+        for param in &mut generics.params {
+            if let GenericParam::Type(ref mut type_param) = *param {
+                type_param
+                    .bounds
+                    .push(parse_quote!(semilattice::SemiLattice));
             }
         }
+
+        let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+        let join = semilattice_join(&input.data);
+
+        quote!(
+            impl #impl_generics semilattice::SemiLattice for #name #ty_generics #where_clause {
+                fn join(self, other: Self) -> Self {
+                    #join
+                }
+            }
+        )
+    };
+
+    let partial_cmp = {
+        let mut generics = input.generics;
+
+        for param in &mut generics.params {
+            if let GenericParam::Type(ref mut type_param) = *param {
+                type_param
+                    .bounds
+                    .push(parse_quote!(semilattice::SemiLattice));
+            }
+        }
+
+        let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+        let partial_cmp = partial_ord_cmp(&input.data);
+
+        quote!(
+            impl #impl_generics core::cmp::PartialOrd for #name #ty_generics #where_clause {
+                fn partial_cmp(&self, other: &Self) -> core::option::Option<core::cmp::Ordering> {
+                    use core::cmp::PartialOrd;
+                    #partial_cmp
+                }
+            }
+        )
+    };
+
+    quote!(
+        #semilattice_impl
+        #partial_cmp
     )
     .into()
 }
@@ -62,33 +95,6 @@ fn semilattice_join(data: &Data) -> TokenStream {
         },
         Data::Enum(_) | Data::Union(_) => unimplemented!(),
     }
-}
-
-#[proc_macro_derive(SemiLatticeOrd)]
-pub fn derive_semilattice_ord(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let mut input = parse_macro_input!(input as DeriveInput);
-    let name = input.ident;
-
-    for param in &mut input.generics.params {
-        if let GenericParam::Type(ref mut type_param) = *param {
-            type_param
-                .bounds
-                .push(parse_quote!(semilattice::SemiLattice));
-        }
-    }
-
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let partial_cmp = partial_ord_cmp(&input.data);
-
-    quote!(
-        impl #impl_generics core::cmp::PartialOrd for #name #ty_generics #where_clause {
-            fn partial_cmp(&self, other: &Self) -> core::option::Option<core::cmp::Ordering> {
-                use core::cmp::PartialOrd;
-                #partial_cmp
-            }
-        }
-    )
-    .into()
 }
 
 fn partial_ord_cmp(data: &Data) -> TokenStream {

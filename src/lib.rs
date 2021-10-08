@@ -8,7 +8,7 @@ use core::{
     fmt::Debug,
 };
 
-pub use semilattice_macros::{SemiLattice, SemiLatticeOrd};
+pub use semilattice_macros::SemiLattice;
 
 pub mod guarded_pair;
 pub mod ord;
@@ -91,7 +91,7 @@ pub fn partially_verify_semilattice_laws<S: SemiLattice + Debug + Clone>(
 }
 
 /// A helper function intended for `core::cmp::PartialOrd::partial_cmp`. This
-/// is used by the derive macro `#[derive(SemiLatticeOrd)]`.
+/// is used by the derive macro `#[derive(SemiLattice)]`.
 pub fn partial_ord_helper(orders: impl IntoIterator<Item = Option<Ordering>>) -> Option<Ordering> {
     let mut greater = false;
     let mut less = false;
