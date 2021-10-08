@@ -1,7 +1,7 @@
 use crate::{self as semilattice, SemiLattice, SemiLatticeOrd};
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, SemiLattice, SemiLatticeOrd)]
-pub struct Pair<A, B>(A, B);
+pub struct Pair<A, B>(pub A, pub B);
 
 #[test]
 fn check_laws() {
