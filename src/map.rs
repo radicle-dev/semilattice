@@ -64,10 +64,10 @@ where
         // self is less if other has additional keys
         for (k, v) in &other.inner {
             // mutual keys contribute the order of their values too
-            if let Some(val) = self.inner.get(&k) {
-                if val > &v {
+            if let Some(val) = self.inner.get(k) {
+                if val > v {
                     greater = true
-                } else if val < &v {
+                } else if val < v {
                     less = true
                 }
             } else {
@@ -75,7 +75,7 @@ where
             }
             // an inconsistency means there is no order.
             if greater && less {
-                return None
+                return None;
             }
         }
 
@@ -108,16 +108,18 @@ where
 
 #[test]
 fn check_laws() {
-    use crate::{ord::Max, partially_verify_semilattice_laws, fold};
+    use crate::{fold, partially_verify_semilattice_laws, Max};
 
-    let samples = (-5..5).map(|x| Map::from(BTreeMap::from([
-        // x = 4
-        ("a", Max(x)),
-        // x = 2 or 3
-        ("b", Max(x * (5 - x))),
-        // x = -5
-        ("c", Max(5 - x)),
-    ])));
+    let samples = (-5..5).map(|x| {
+        Map::from(BTreeMap::from([
+            // x = 4
+            ("a", Max(x)),
+            // x = 2 or 3
+            ("b", Max(x * (5 - x))),
+            // x = -5
+            ("c", Max(5 - x)),
+        ]))
+    });
 
     partially_verify_semilattice_laws(samples.clone());
 

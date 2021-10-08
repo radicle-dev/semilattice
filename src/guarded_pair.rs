@@ -44,7 +44,7 @@ where
 
 #[test]
 fn check_laws() {
-    use crate::{ord::Max, ord::Min, partially_verify_semilattice_laws};
+    use crate::{partially_verify_semilattice_laws, Max, Min};
 
     partially_verify_semilattice_laws([
         GuardedPair {

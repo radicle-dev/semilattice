@@ -1,17 +1,22 @@
 [package]
-name = "lattices"
+name = "semilattice"
+authors = ["Sofia <D20F2B901893DA801CF51D6E33680DA3EACB1E39>"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+include = ["src/**/*", "LICENSE-*", "README.md"]
 
 [features]
+default = ["alloc"]
 alloc = []
-set = ["alloc"]
 
-[dev-dependencies.blake3]
-version = "1.0.0"
-default-features = false
+[dependencies.semilattice-macros]
+path = "semilattice-macros"
 
 [dependencies.num]
 version = "0.4.0"
+default-features = false
+
+[dev-dependencies.blake3]
+version = "1.0.0"
 default-features = false

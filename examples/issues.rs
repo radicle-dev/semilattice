@@ -1,20 +1,16 @@
-use core::cmp::{PartialOrd, Ord};
+use core::cmp::{Ord, PartialOrd};
 
-use lattices::{
-    set::Set,
-    map::Map,
-    ord::Max,
-};
+#[cfg(not(feature = "alloc"))]
+compile_error!("This example requires the alloc feature.");
+
+use semilattice::{Map, Max, Set};
 
 use blake3::Hasher;
 
 mod dag {
-    use core::cmp::{PartialOrd, Ordering, Ord};
+    use core::cmp::{Ord, Ordering, PartialOrd};
 
-    use lattices::{
-        set::Set,
-        map::Map,
-    };
+    use semilattice::{map::Map, set::Set};
 
     use blake3::{Hash, Hasher};
 
@@ -58,9 +54,13 @@ mod dag {
 
     impl Dag {
         pub fn reference(&mut self, other: &Self) -> OrdHash {
-            self.events.insert(Event::CrossReference(OrdHash(self.tag), OrdHash(other.tag)), Set::default());
+            self.events.insert(
+                Event::CrossReference(OrdHash(self.tag), OrdHash(other.tag)),
+                Set::default(),
+            );
             self.tag = {
-                let mut hasher = Hasher::new_derive_key(concat!(module_path!(), "::Dag::reference"));
+                let mut hasher =
+                    Hasher::new_derive_key(concat!(module_path!(), "::Dag::reference"));
                 hasher.update(self.tag.as_bytes());
                 hasher.update(other.tag.as_bytes());
                 hasher.finalize()
@@ -69,7 +69,10 @@ mod dag {
         }
 
         pub fn commit_hash(&mut self, hash: Hash) -> OrdHash {
-            self.events.insert(Event::Hash(OrdHash(self.tag), OrdHash(hash)), Set::default());
+            self.events.insert(
+                Event::Hash(OrdHash(self.tag), OrdHash(hash)),
+                Set::default(),
+            );
             self.tag = {
                 let mut hasher = Hasher::new_derive_key(concat!(module_path!(), "::Dag::hash"));
                 hasher.update(self.tag.as_bytes());
@@ -81,7 +84,7 @@ mod dag {
     }
 }
 
-use crate::dag::{OrdHash, Dag};
+use crate::dag::{Dag, OrdHash};
 
 pub type Author = &'static str;
 
@@ -142,7 +145,7 @@ fn main() {
     // She sends her first message.
     let a0 = alice.comment(Comment {
         author: "Alice",
-        content: "Hello world. I have this issue. [..]"
+        content: "Hello world. I have this issue. [..]",
     });
 
     // Bob observes the thread, he starts where she left off.
@@ -151,7 +154,7 @@ fn main() {
         author: "Bob",
         content: "Huh. Can you run the tests?",
     });
-/*
+    /*
     // Bob observes the thread and opts-in to contributing.
     // He acknowledges Alice' DAG
     let b0 = dag.insert(Event::CrossReference(root, a0.clone()));

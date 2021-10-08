@@ -8,11 +8,25 @@ use core::{
     fmt::Debug,
 };
 
+pub use semilattice_macros::{SemiLattice, SemiLatticeOrd};
+
 pub mod guarded_pair;
-pub mod map;
 pub mod ord;
 pub mod pair;
+
+pub use crate::{
+    guarded_pair::GuardedPair,
+    ord::{Max, Min},
+    pair::Pair,
+};
+
+#[cfg(feature = "alloc")]
+pub mod map;
+#[cfg(feature = "alloc")]
 pub mod set;
+
+#[cfg(feature = "alloc")]
+pub use crate::{map::Map, set::Set};
 
 /// A bounded join-semilattice whose `PartialOrd` obeys the lattice
 /// semantics and whose `Default` is the bottom element of the lattice.
@@ -46,7 +60,7 @@ pub fn partially_verify_semilattice_laws<S: SemiLattice + Debug + Clone>(
 
     for a in samples.clone() {
         // All samples must be greater or equal to the bottom element.
-        assert!(&bottom <= &a);
+        assert!(bottom <= a);
 
         // ACI properties & partial order consistency
         for b in samples.clone() {
@@ -74,4 +88,28 @@ pub fn partially_verify_semilattice_laws<S: SemiLattice + Debug + Clone>(
         // idempotent
         assert_eq!(&a, &fold([a.clone(), a.clone()]));
     }
+}
+
+/// A helper function intended for `core::cmp::PartialOrd::partial_cmp`. This
+/// is used by the derive macro `#[derive(SemiLatticeOrd)]`.
+pub fn partial_ord_helper(orders: impl IntoIterator<Item = Option<Ordering>>) -> Option<Ordering> {
+    let mut greater = false;
+    let mut less = false;
+
+    for ord in orders {
+        if let Some(ord) = ord {
+            match ord {
+                Ordering::Less => less = true,
+                Ordering::Greater => greater = true,
+                Ordering::Equal => (),
+            }
+        } else {
+            return None;
+        }
+        if greater && less {
+            return None;
+        }
+    }
+
+    Some(greater.cmp(&less))
 }
