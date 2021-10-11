@@ -14,12 +14,14 @@ pub mod guarded_pair;
 pub mod ord;
 pub mod pair;
 pub mod redactable;
+pub mod option;
 
 pub use crate::{
     guarded_pair::GuardedPair,
     ord::{Max, Min},
     pair::Pair,
     redactable::Redactable,
+    option::UpsideDownOption,
 };
 
 #[cfg(feature = "alloc")]
@@ -99,17 +101,11 @@ pub fn partial_ord_helper(orders: impl IntoIterator<Item = Option<Ordering>>) ->
     let mut less = false;
 
     for ord in orders {
-        if let Some(ord) = ord {
-            match ord {
-                Ordering::Less => less = true,
-                Ordering::Greater => greater = true,
-                Ordering::Equal => (),
-            }
-        } else {
-            return None;
-        }
-        if greater && less {
-            return None;
+        match ord {
+            Some(Ordering::Less) if !greater => less = true,
+            Some(Ordering::Greater) if !less => greater = true,
+            Some(Ordering::Equal) => (),
+            _ => return None,
         }
     }
 

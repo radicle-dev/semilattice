@@ -84,7 +84,11 @@ where
     }
 }
 
-impl<K, V> From<BTreeMap<K, V>> for Map<K, V> {
+impl<K, V> From<BTreeMap<K, V>> for Map<K, V>
+where
+    K: Ord,
+    V: SemiLattice,
+{
     fn from(inner: BTreeMap<K, V>) -> Self {
         Self { inner }
     }
@@ -103,6 +107,14 @@ where
     K: Ord,
     V: SemiLattice,
 {
+    pub fn singleton(key: K, value: V) -> Self {
+        let mut res = Self::default();
+
+        res.insert(key, value);
+
+        res
+    }
+
     pub fn insert(&mut self, key: K, value: V) {
         match self.inner.entry(key) {
             Entry::Vacant(ve) => {
