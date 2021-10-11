@@ -1,12 +1,14 @@
 use core::{
     cmp::{Ord, Ordering, PartialOrd},
     mem,
+    ops::Deref,
 };
 
 use alloc::collections::btree_map::{BTreeMap, Entry};
 
 use crate::SemiLattice;
 
+/// A map from arbitrary keys to semilattices.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Map<K, V> {
     inner: BTreeMap<K, V>,
@@ -17,30 +19,6 @@ impl<K, V> Default for Map<K, V> {
         Self {
             inner: Default::default(),
         }
-    }
-}
-
-impl<K, V> Map<K, V>
-where
-    K: Ord,
-    V: SemiLattice,
-{
-    pub fn insert(&mut self, key: K, value: V) {
-        match self.inner.entry(key) {
-            Entry::Vacant(ve) => {
-                ve.insert(value);
-            }
-            Entry::Occupied(mut oe) => {
-                let val = oe.get_mut();
-                *val = mem::take(val).join(value);
-            }
-        }
-    }
-}
-
-impl<K, V> From<BTreeMap<K, V>> for Map<K, V> {
-    fn from(inner: BTreeMap<K, V>) -> Self {
-        Self { inner }
     }
 }
 
@@ -101,6 +79,38 @@ where
                     self.insert(k, v);
                 }
                 self
+            }
+        }
+    }
+}
+
+impl<K, V> From<BTreeMap<K, V>> for Map<K, V> {
+    fn from(inner: BTreeMap<K, V>) -> Self {
+        Self { inner }
+    }
+}
+
+impl<K, V> Deref for Map<K, V> {
+    type Target = BTreeMap<K, V>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<K, V> Map<K, V>
+where
+    K: Ord,
+    V: SemiLattice,
+{
+    pub fn insert(&mut self, key: K, value: V) {
+        match self.inner.entry(key) {
+            Entry::Vacant(ve) => {
+                ve.insert(value);
+            }
+            Entry::Occupied(mut oe) => {
+                let val = oe.get_mut();
+                *val = mem::take(val).join(value);
             }
         }
     }

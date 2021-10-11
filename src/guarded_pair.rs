@@ -2,6 +2,7 @@ use core::cmp::{Ordering, PartialOrd};
 
 use crate::SemiLattice;
 
+/// A pair of semilattices, where the former acts as to version the latter.
 #[derive(Default, Debug, PartialEq, Clone, Copy)]
 pub struct GuardedPair<G, V> {
     guard: G,

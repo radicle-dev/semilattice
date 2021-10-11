@@ -1,9 +1,14 @@
-use core::cmp::{Ord, Ordering, PartialOrd};
+use core::{
+    cmp::{Ord, Ordering, PartialOrd},
+    ops::Deref,
+};
 
 use alloc::collections::btree_set::BTreeSet;
 
 use crate::SemiLattice;
 
+/// A set of arbitrary values. If the carried type is a lattice, values will
+/// not be merged.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Set<K> {
     inner: BTreeSet<K>,
@@ -14,27 +19,6 @@ impl<K> Default for Set<K> {
         Self {
             inner: Default::default(),
         }
-    }
-}
-
-impl<K> Set<K>
-where
-    K: Ord,
-{
-    pub fn singleton(value: K) -> Self {
-        Self {
-            inner: BTreeSet::from([value]),
-        }
-    }
-
-    pub fn insert(&mut self, value: K) {
-        self.inner.insert(value);
-    }
-}
-
-impl<K> From<BTreeSet<K>> for Set<K> {
-    fn from(inner: BTreeSet<K>) -> Self {
-        Self { inner }
     }
 }
 
@@ -69,6 +53,35 @@ where
                 self
             }
         }
+    }
+}
+
+impl<K> From<BTreeSet<K>> for Set<K> {
+    fn from(inner: BTreeSet<K>) -> Self {
+        Self { inner }
+    }
+}
+
+impl<K> Deref for Set<K> {
+    type Target = BTreeSet<K>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<K> Set<K>
+where
+    K: Ord,
+{
+    pub fn singleton(value: K) -> Self {
+        Self {
+            inner: BTreeSet::from([value]),
+        }
+    }
+
+    pub fn insert(&mut self, value: K) {
+        self.inner.insert(value);
     }
 }
 

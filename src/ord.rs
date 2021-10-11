@@ -2,9 +2,11 @@ use core::cmp::{Ord, Ordering, PartialOrd};
 
 use crate::SemiLattice;
 
+/// Selects the smallest value of a totally ordered and bounded type.
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Min<T>(pub T);
 
+/// Selects the largest value of a totally ordered and bounded type.
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Max<T>(pub T);
 
