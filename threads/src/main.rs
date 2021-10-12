@@ -30,7 +30,7 @@ impl<const N: usize> Vote<N> {
     pub fn aggregate(&self) -> [usize; N] {
         let mut res = [0; N];
 
-        for (_, v) in &*self.0 {
+        for v in (*self.0).values() {
             res[v.0 as usize % N] += 1;
         }
 
@@ -138,7 +138,7 @@ impl ThreadActor {
                 // we do not modify the comments
                 Comment::default(),
                 Map::singleton(reaction, Vote(Map::singleton(self.aid, Max(vote)))),
-            ]
+            ],
         );
     }
 }

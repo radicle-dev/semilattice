@@ -11,17 +11,17 @@ use core::{
 pub use semilattice_macros::SemiLattice;
 
 pub mod guarded_pair;
+pub mod option;
 pub mod ord;
 pub mod pair;
 pub mod redactable;
-pub mod option;
 
 pub use crate::{
     guarded_pair::GuardedPair,
+    option::UpsideDownOption,
     ord::{Max, Min},
     pair::Pair,
     redactable::Redactable,
-    option::UpsideDownOption,
 };
 
 #[cfg(feature = "alloc")]

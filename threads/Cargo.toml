@@ -1,7 +1,9 @@
 [package]
 name = "threads"
+authors = ["Sofia <D20F2B901893DA801CF51D6E33680DA3EACB1E39>"]
 version = "0.0.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies.semilattice]

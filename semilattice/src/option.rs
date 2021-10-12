@@ -22,7 +22,7 @@ pub enum UpsideDownOption<T> {
 
 impl<T> Default for UpsideDownOption<T>
 where
-    T: Default
+    T: Default,
 {
     fn default() -> Self {
         Self::Some(T::default())
@@ -38,7 +38,7 @@ where
             (Self::None, Self::None) => Some(Ordering::Equal),
             (Self::None, Self::Some(_)) => Some(Ordering::Greater),
             (Self::Some(_), Self::None) => Some(Ordering::Less),
-            (Self::Some(a), Self::Some(b)) => a.partial_cmp(&b)
+            (Self::Some(a), Self::Some(b)) => a.partial_cmp(b),
         }
     }
 }
@@ -66,13 +66,9 @@ impl<T> From<Option<T>> for UpsideDownOption<T> {
 
 #[test]
 fn check_laws() {
-    use crate::{partially_verify_semilattice_laws, Max, fold};
+    use crate::{fold, partially_verify_semilattice_laws, Max};
 
-    let samples = [
-        None,
-        Some(Max(0)),
-        Some(Max(5)),
-    ];
+    let samples = [None, Some(Max(0)), Some(Max(5))];
 
     partially_verify_semilattice_laws(samples.clone());
 
@@ -80,13 +76,9 @@ fn check_laws() {
 
     // Rust's imports are not lexically scoped; lets hack around that.
     {
-        use UpsideDownOption::{Some, None};
+        use UpsideDownOption::{None, Some};
 
-        let samples = [
-            None,
-            Some(Max(0)),
-            Some(Max(5)),
-        ];
+        let samples = [None, Some(Max(0)), Some(Max(5))];
 
         partially_verify_semilattice_laws(samples.clone());
 
