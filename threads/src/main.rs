@@ -1,6 +1,3 @@
-#[cfg(not(feature = "alloc"))]
-compile_error!("This example requires the alloc feature.");
-
 use core::mem;
 
 use semilattice::{hlist, HList, Map, Max, Pair, Redactable, SemiLattice, Set};

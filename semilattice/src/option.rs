@@ -49,8 +49,8 @@ where
 {
     fn join(self, other: Self) -> Self {
         match (self, other) {
-            (Self::None, _) | (_, Self::None) => Self::None,
             (Self::Some(a), Self::Some(b)) => Self::Some(a.join(b)),
+            _ => Self::None,
         }
     }
 }
