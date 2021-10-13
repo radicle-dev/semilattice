@@ -8,4 +8,15 @@ publish = false
 
 [dependencies.semilattice]
 path = "../semilattice"
-features = ["alloc"]
+features = ["alloc", "minicbor"]
+
+[dependencies.serde]
+version = "1.0"
+features = ["derive"]
+
+[dependencies.ciborium]
+version = "0.1.0"
+
+[dependencies.minicbor]
+version = "0.9.1"
+features = ["derive", "alloc", "half"]

@@ -15,8 +15,12 @@ where
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "minicbor", derive(minicbor::Encode, minicbor::Decode))]
 pub enum UpsideDownOption<T> {
-    Some(T),
+    #[n(0)]
+    Some(#[n(0)] T),
+    #[n(1)]
     None,
 }
 

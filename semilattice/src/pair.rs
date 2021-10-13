@@ -2,7 +2,9 @@ use crate::{self as semilattice, SemiLattice};
 
 /// An anonymous pair of semilattices.
 #[derive(Clone, Copy, Default, Debug, PartialEq, SemiLattice)]
-pub struct Pair<A, B>(pub A, pub B);
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "minicbor", derive(minicbor::Encode, minicbor::Decode))]
+pub struct Pair<A, B>(#[n(0)] pub A, #[n(1)] pub B);
 
 #[macro_export]
 macro_rules! HList {

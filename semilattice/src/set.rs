@@ -10,11 +10,21 @@ use crate::SemiLattice;
 /// A set of arbitrary values. If the carried type is a lattice, values will
 /// not be merged.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Set<K> {
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "minicbor", derive(minicbor::Encode, minicbor::Decode))]
+#[cbor(transparent)]
+pub struct Set<K>
+where
+    K: Ord,
+{
+    #[n(0)]
     inner: BTreeSet<K>,
 }
 
-impl<K> Default for Set<K> {
+impl<K> Default for Set<K>
+where
+    K: Ord
+{
     fn default() -> Self {
         Self {
             inner: Default::default(),
@@ -56,13 +66,19 @@ where
     }
 }
 
-impl<K> From<BTreeSet<K>> for Set<K> {
+impl<K> From<BTreeSet<K>> for Set<K>
+where
+    K: Ord,
+{
     fn from(inner: BTreeSet<K>) -> Self {
         Self { inner }
     }
 }
 
-impl<K> Deref for Set<K> {
+impl<K> Deref for Set<K>
+where
+    K: Ord,
+{
     type Target = BTreeSet<K>;
 
     fn deref(&self) -> &Self::Target {

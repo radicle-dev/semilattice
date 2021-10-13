@@ -4,11 +4,15 @@ use crate::SemiLattice;
 
 /// Selects the smallest value of a totally ordered and bounded type.
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub struct Min<T>(pub T);
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "minicbor", derive(minicbor::Encode, minicbor::Decode))]
+pub struct Min<T>(#[n(0)] pub T);
 
 /// Selects the largest value of a totally ordered and bounded type.
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub struct Max<T>(pub T);
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "minicbor", derive(minicbor::Encode, minicbor::Decode))]
+pub struct Max<T>(#[n(0)] pub T);
 
 impl<T> Default for Min<T>
 where

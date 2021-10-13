@@ -10,11 +10,21 @@ use crate::SemiLattice;
 
 /// A map from arbitrary keys to semilattices.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Map<K, V> {
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "minicbor", derive(minicbor::Encode, minicbor::Decode))]
+#[cbor(transparent)]
+pub struct Map<K, V>
+where
+    K: Ord,
+{
+    #[n(0)]
     inner: BTreeMap<K, V>,
 }
 
-impl<K, V> Default for Map<K, V> {
+impl<K, V> Default for Map<K, V>
+where
+    K: Ord,
+{
     fn default() -> Self {
         Self {
             inner: Default::default(),
@@ -94,7 +104,10 @@ where
     }
 }
 
-impl<K, V> Deref for Map<K, V> {
+impl<K, V> Deref for Map<K, V>
+where
+    K: Ord,
+{
     type Target = BTreeMap<K, V>;
 
     fn deref(&self) -> &Self::Target {

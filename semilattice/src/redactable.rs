@@ -6,10 +6,15 @@ use crate::SemiLattice;
 /// attempts to change the underlying value, will collapse to the redacted
 /// state.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "minicbor", derive(minicbor::Encode, minicbor::Decode))]
 pub enum Redactable<T> {
     // FIXME: It is syntactically invalid to use this variant.
+    #[n(0)]
     Uninitialized,
-    Data(T),
+    #[n(1)]
+    Data(#[n(0)] T),
+    #[n(2)]
     Redacted,
 }
 
