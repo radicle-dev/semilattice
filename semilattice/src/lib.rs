@@ -6,6 +6,7 @@ extern crate alloc;
 use core::{
     cmp::{Ordering, PartialOrd},
     fmt::Debug,
+    mem,
 };
 
 pub use semilattice_macros::SemiLattice;
@@ -36,6 +37,10 @@ pub use crate::{map::Map, set::Set};
 /// semantics and whose `Default` is the bottom element of the lattice.
 pub trait SemiLattice: Default + PartialOrd {
     fn join(self, other: Self) -> Self;
+
+    fn join_assign(&mut self, other: Self) {
+        *self = mem::take(self).join(other);
+    }
 }
 
 /// Reduce an iterator of semilattice values to its least upper bound.

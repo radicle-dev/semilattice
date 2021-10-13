@@ -23,7 +23,7 @@ where
 
 impl<K> Default for Set<K>
 where
-    K: Ord
+    K: Ord,
 {
     fn default() -> Self {
         Self {

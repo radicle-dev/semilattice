@@ -139,6 +139,10 @@ where
             }
         }
     }
+
+    pub fn entry(&mut self, key: K) -> &mut V {
+        self.inner.entry(key).or_default()
+    }
 }
 
 #[test]
