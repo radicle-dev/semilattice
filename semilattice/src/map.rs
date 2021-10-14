@@ -53,10 +53,11 @@ where
         for (k, v) in &other.inner {
             // mutual keys contribute the order of their values too
             if let Some(val) = self.inner.get(k) {
-                if val > v {
-                    greater = true
-                } else if val < v {
-                    less = true
+                match val.partial_cmp(v) {
+                    Some(Ordering::Greater) => greater = true,
+                    Some(Ordering::Less) => less = true,
+                    Some(Ordering::Equal) => (),
+                    None => return None,
                 }
             } else {
                 less = true
