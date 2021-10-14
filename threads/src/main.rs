@@ -96,7 +96,13 @@ impl Thread {
         // apply all reactions
         for (k, v) in BTreeMap::from(slice.reactions) {
             for (r, v) in BTreeMap::from(v) {
-                self.graph.entry(k.0).entry(k.1).reactions.entry(r).entry(aid).join_assign(v);
+                self.graph
+                    .entry(k.0)
+                    .entry(k.1)
+                    .reactions
+                    .entry(r)
+                    .entry(aid)
+                    .join_assign(v);
             }
         }
     }
@@ -149,7 +155,10 @@ impl Actor {
         let comment = self.slice.comments.entry(id.1);
 
         comment.reply_to.insert(parent);
-        comment.content.entry(0).join_assign(Redactable::Data(message));
+        comment
+            .content
+            .entry(0)
+            .join_assign(Redactable::Data(message));
 
         id
     }
@@ -158,17 +167,28 @@ impl Actor {
         let content = &mut self.slice.comments.entry(id.1).content;
         let version: u64 = content.len().try_into().unwrap();
 
-        content.entry((version << 16) + self.device_id).join_assign(Redactable::Data(message));
+        content
+            .entry((version << 16) + self.device_id)
+            .join_assign(Redactable::Data(message));
 
         id
     }
 
     fn redact(&mut self, id: MessageID, version: u64) {
-        self.slice.comments.entry(id.1).content.entry(version).join_assign(Redactable::Redacted);
+        self.slice
+            .comments
+            .entry(id.1)
+            .content
+            .entry(version)
+            .join_assign(Redactable::Redacted);
     }
 
     fn react(&mut self, id: MessageID, reaction: Reaction, vote: u64) {
-        self.slice.reactions.entry(id).entry(reaction).join_assign(Max(vote));
+        self.slice
+            .reactions
+            .entry(id)
+            .entry(reaction)
+            .join_assign(Max(vote));
     }
 }
 
@@ -202,17 +222,20 @@ fn main() {
     let bob_slice = bob.extract_slice();
 
     let mut buffer = Vec::new();
-    minicbor::encode(&alice_0_slice, &mut buffer).expect("Failed to encode Alice#0' slice to CBOR.");
+    minicbor::encode(&alice_0_slice, &mut buffer)
+        .expect("Failed to encode Alice#0' slice to CBOR.");
     eprintln!("Alice#0: {}", minicbor::display(&buffer));
 
     buffer.clear();
-    minicbor::encode(&alice_1_slice, &mut buffer).expect("Failed to encode Alice#1' slice to CBOR.");
+    minicbor::encode(&alice_1_slice, &mut buffer)
+        .expect("Failed to encode Alice#1' slice to CBOR.");
     eprintln!("Alice#1: {}", minicbor::display(&buffer));
 
     let alice_combined_slice = NamedSlice(alice_0_slice.0, alice_0_slice.1.join(alice_1_slice.1));
 
     buffer.clear();
-    minicbor::encode(&alice_combined_slice, &mut buffer).expect("Failed to encode Alice' slice to CBOR.");
+    minicbor::encode(&alice_combined_slice, &mut buffer)
+        .expect("Failed to encode Alice' slice to CBOR.");
     eprintln!("Alice: {}", minicbor::display(&buffer));
 
     buffer.clear();
