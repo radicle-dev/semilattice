@@ -104,6 +104,16 @@ where
     }
 }
 
+impl<K, V> From<Map<K, V>> for BTreeMap<K, V>
+where
+    K: Ord,
+    V: SemiLattice,
+{
+    fn from(map: Map<K, V>) -> Self {
+        map.inner
+    }
+}
+
 impl<K, V> Deref for Map<K, V>
 where
     K: Ord,

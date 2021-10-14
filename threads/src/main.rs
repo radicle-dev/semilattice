@@ -1,24 +1,39 @@
+use core::{mem, ops};
+
 use semilattice::{Map, Max, Redactable, SemiLattice, Set};
 
-/// A local identifier for an actor. This does not need to be globally
-/// consistent.
-pub type AID = String;
+/// An actor ID. Probably a public key.
+pub type AID = minicbor::bytes::ByteArray<32>;
 
-/// A locally unique ID. This does not need to be globally consistent.
+/// A Message ID. An actor ID paired with a supposedly unique number. The actor
+/// is responsible for choosing a unique number.
 pub type MessageID = (AID, u64);
 
 pub type Reaction = String;
 
 #[derive(Default, Debug, Clone, SemiLattice, PartialEq, minicbor::Encode, minicbor::Decode)]
-// FIXME: Set a syntactic constraint to eliminate impersonation.
 #[cbor(transparent)]
 pub struct Vote<const N: usize>(#[n(0)] Map<AID, Max<u64>>);
+
+impl<const N: usize> ops::Deref for Vote<N> {
+    type Target = Map<AID, Max<u64>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<const N: usize> ops::DerefMut for Vote<N> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 impl<const N: usize> Vote<N> {
     pub fn aggregate(&self) -> [usize; N] {
         let mut res = [0; N];
 
-        for v in (*self.0).values() {
+        for v in self.values() {
             res[v.0 as usize % N] += 1;
         }
 
@@ -28,20 +43,67 @@ impl<const N: usize> Vote<N> {
 
 #[derive(Clone, Default, Debug, PartialEq, SemiLattice, minicbor::Encode, minicbor::Decode)]
 struct Comment {
-    // Which comments are we responding to?
-    // FIXME: Set a syntactic constraint against the partial order DAG such
-    // that this cannot express cycles.
     #[n(0)]
     reply_to: Set<MessageID>,
     // Redactable versioned content of a comment.
     #[n(1)]
     content: Map<u64, Redactable<String>>,
-    #[n(2)]
+}
+
+#[derive(Clone, Default, Debug, PartialEq, SemiLattice, minicbor::Encode, minicbor::Decode)]
+pub struct Node {
+    #[n(0)]
+    comment: Comment,
+    #[n(1)]
     reactions: Map<Reaction, Vote<2>>,
+    // back references
+    #[n(2)]
+    responses: Set<MessageID>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, SemiLattice, minicbor::Encode, minicbor::Decode)]
+pub struct Slice {
+    #[n(0)]
+    comments: Map<u64, Comment>,
+    #[n(1)]
+    reactions: Map<MessageID, Map<Reaction, Max<u64>>>,
 }
 
 #[derive(Debug, Clone, minicbor::Encode, minicbor::Decode)]
-pub struct ThreadActor {
+struct NamedSlice(#[n(0)] AID, #[n(1)] Slice);
+
+#[derive(Default, Debug, Clone, PartialEq, SemiLattice, minicbor::Encode, minicbor::Decode)]
+pub struct Thread {
+    #[n(0)]
+    graph: Map<AID, Map<u64, Node>>,
+}
+
+impl Thread {
+    // Inefficient implementation; but is correct by construction without
+    // validation steps. Assumes only that NamedSlice is well formed.
+    fn absorb_slice(&mut self, NamedSlice(aid, slice): NamedSlice) {
+        use std::collections::BTreeMap;
+
+        for (k, v) in BTreeMap::from(slice.comments) {
+            // record back-references for responses
+            for r in v.reply_to.iter() {
+                self.graph.entry(r.0).entry(r.1).responses.insert((aid, k));
+            }
+            // record any versions of the comment
+            self.graph.entry(aid).entry(k).comment.join_assign(v);
+        }
+
+        // apply all reactions
+        for (k, v) in BTreeMap::from(slice.reactions) {
+            for (r, v) in BTreeMap::from(v) {
+                self.graph.entry(k.0).entry(k.1).reactions.entry(r).entry(aid).join_assign(v);
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, minicbor::Encode, minicbor::Decode)]
+pub struct Actor {
     #[n(0)]
     id: AID,
     #[n(1)]
@@ -49,155 +111,122 @@ pub struct ThreadActor {
     #[n(2)]
     counter: u64,
     #[n(3)]
-    threads: Map<AID, Map<u64, Comment>>,
+    slice: Slice,
 }
 
-impl ThreadActor {
+impl Actor {
     fn new(id: AID, device_id: u64) -> Self {
         Self {
-            threads: Default::default(),
             id,
             device_id,
             counter: 0,
+            slice: Default::default(),
         }
     }
 
-    fn comment(&mut self, id: MessageID) -> &mut Comment {
-        self.threads.entry(id.0).entry(id.1)
+    fn extract_slice(&mut self) -> NamedSlice {
+        NamedSlice(self.id, mem::take(&mut self.slice))
     }
 
     fn new_thread(&mut self, message: String) -> MessageID {
-        let count = (self.counter << 16) + self.device_id;
+        let id = (self.id, (self.counter << 16) + self.device_id);
         self.counter += 1;
 
-        self.comment((self.id.clone(), count))
+        self.slice
+            .comments
+            .entry(id.1)
             .content
             .entry(0)
             .join_assign(Redactable::Data(message));
 
-        (self.id.clone(), count)
+        id
     }
 
     fn reply(&mut self, parent: MessageID, message: String) -> MessageID {
-        let count = (self.counter << 16) + self.device_id;
+        let id = (self.id, (self.counter << 16) + self.device_id);
         self.counter += 1;
 
-        self.comment((self.id.clone(), count)).join_assign(Comment {
-            reply_to: Set::singleton(parent),
-            content: Map::singleton(0, Redactable::Data(message)),
-            reactions: Map::default(),
-        });
+        let comment = self.slice.comments.entry(id.1);
 
-        (self.id.clone(), count)
+        comment.reply_to.insert(parent);
+        comment.content.entry(0).join_assign(Redactable::Data(message));
+
+        id
     }
 
-    fn edit(&mut self, target: MessageID, message: String) {
-        let device_id = self.device_id;
-        let content = &mut self.comment(target).content;
+    fn edit(&mut self, id: MessageID, message: String) -> MessageID {
+        let content = &mut self.slice.comments.entry(id.1).content;
+        let version: u64 = content.len().try_into().unwrap();
 
-        content
-            .entry((u64::try_from(content.len()).unwrap() << 16) + device_id)
-            .join_assign(Redactable::Data(message));
+        content.entry((version << 16) + self.device_id).join_assign(Redactable::Data(message));
+
+        id
     }
 
-    fn redact(&mut self, target: MessageID, version: u64) {
-        self.comment(target)
-            .content
-            .entry(version)
-            .join_assign(Redactable::Redacted);
+    fn redact(&mut self, id: MessageID, version: u64) {
+        self.slice.comments.entry(id.1).content.entry(version).join_assign(Redactable::Redacted);
     }
 
-    fn react(&mut self, target: MessageID, reaction: Reaction, vote: u64) {
-        let id = self.id.clone();
-
-        self.comment(target)
-            .reactions
-            .entry(reaction)
-            .0
-            .entry(id)
-            .join_assign(Max(vote));
-    }
-
-    fn validate(&self) -> bool {
-        for (k, v) in &*self.threads {
-            // we cannot impersonate other users
-            if !v.values().all(|c| {
-                (k == &self.id || c.content.len() == 0)
-                    && c.reactions
-                        .values()
-                        .all(|x| x.0.keys().all(|y| y == &self.id))
-            }) {
-                return false;
-            }
-        }
-
-        true
+    fn react(&mut self, id: MessageID, reaction: Reaction, vote: u64) {
+        self.slice.reactions.entry(id).entry(reaction).join_assign(Max(vote));
     }
 }
 
 fn main() {
-    let mut alice = ThreadActor::new("Alice".to_owned(), 0);
+    // Alice has multiple devices
+    let mut alice_0 = Actor::new(AID::from(*b"Alice_6789abcdef0123456789abcdef"), 0);
+    let mut alice_1 = Actor::new(AID::from(*b"Alice_6789abcdef0123456789abcdef"), 1);
 
-    let a0 = alice.new_thread("Hello world. I have this issue. [..]".to_owned());
+    // Bob has one
+    let mut bob = Actor::new(AID::from(*b"Bob_456789abcdef0123456789abcdef"), 0);
 
-    let mut bob = ThreadActor::new("Bob".to_owned(), 0);
+    // Alice creates a new issue from her laptop
+    let a0 = alice_0.new_thread("Hello world. I have this issue [..]".to_owned());
+    // Bob responds
+    let b0 = bob.reply(a0, "Huh. Can you run the tests?".to_owned());
 
-    let b0 = bob.reply(a0.clone(), "Huh. Did you run the tests?".to_owned());
+    // Alice reacts form her phone
+    let _a1 = alice_1.react(b0, ":hourglass:".to_owned(), 1);
 
-    alice.react(b0.clone(), ":hourglass:".to_owned(), 1);
+    // responds from her laptop
+    let a2 = alice_0.reply(b0, "Ah! Test #3 failed. [..]".to_owned());
+    // edits her response from her phone
+    let _a2_edit_version = alice_1.edit(a2, "Ah! Test #4 failed. [..]".to_owned());
+    // and redacts her first version to hide her typo.
+    alice_1.redact(a2, 0);
 
-    let a1 = alice.reply(b0, "Ah! Test #3 failed. [..]".to_owned());
-    // Alice may redact her message.
-    alice.redact(a1.clone(), 0);
-    // and submit a new version.
-    alice.edit(a1, "Ah! Test #4 failed. [..]".to_owned());
+    // CBOR encode each slice
 
-    let mut alice_enc = Vec::new();
-    minicbor::encode(&alice.threads, &mut alice_enc)
-        .expect("Failed to encode Alice' state to CBOR");
-    eprintln!("Alice: {}", minicbor::display(&alice_enc));
+    let alice_0_slice = alice_0.extract_slice();
+    let alice_1_slice = alice_1.extract_slice();
+    let bob_slice = bob.extract_slice();
 
-    let mut bob_enc = Vec::new();
-    minicbor::encode(&bob.threads, &mut bob_enc).expect("Failed to encode Alice' state to CBOR");
-    eprintln!("Bob: {}", minicbor::display(&bob_enc));
+    let mut buffer = Vec::new();
+    minicbor::encode(&alice_0_slice, &mut buffer).expect("Failed to encode Alice#0' slice to CBOR.");
+    eprintln!("Alice#0: {}", minicbor::display(&buffer));
 
-    let materialized = alice.threads.clone().join(bob.threads.clone());
+    buffer.clear();
+    minicbor::encode(&alice_1_slice, &mut buffer).expect("Failed to encode Alice#1' slice to CBOR.");
+    eprintln!("Alice#1: {}", minicbor::display(&buffer));
 
-    let mut materialized_enc = Vec::new();
-    minicbor::encode(&materialized, &mut materialized_enc)
-        .expect("Failed to encode Alice' state to CBOR");
-    eprintln!("Materialized: {}", minicbor::display(&materialized_enc));
+    let alice_combined_slice = NamedSlice(alice_0_slice.0, alice_0_slice.1.join(alice_1_slice.1));
 
-    // Alice and Bob have valid states
-    assert!(alice.validate());
-    assert!(bob.validate());
+    buffer.clear();
+    minicbor::encode(&alice_combined_slice, &mut buffer).expect("Failed to encode Alice' slice to CBOR.");
+    eprintln!("Alice: {}", minicbor::display(&buffer));
 
-    // Let Eve assume Bob's state for the following.
-    let mut eve = bob.clone();
+    buffer.clear();
+    minicbor::encode(&bob_slice, &mut buffer).expect("Failed to encode Bob's slice to CBOR");
+    eprintln!("Bob: {}", minicbor::display(&buffer));
 
-    // If Eve tries to edit Alice' message...
-    eve.edit(a0.clone(), "I am Alice!".to_owned());
+    // Aggregate slices into a thread. CBOR encode the materialized view.
 
-    // her slice will no longer be valid.
-    assert!(!eve.validate());
+    let mut thread = Thread::default();
+    thread.absorb_slice(alice_combined_slice);
+    thread.absorb_slice(bob_slice);
 
-    // restore eve to a valid state
-    eve = bob;
-
-    // Likewise, she may not react on someone else' behalf.
-    eve.comment(a0)
-        .reactions
-        .entry(":love:".to_owned())
-        .0
-        .entry("Alice".to_owned())
-        .join_assign(Max(0));
-    assert!(!eve.validate());
-
-    /*
-    use std::fs;
-
-    fs::write("alice.cbor", alice_enc);
-    fs::write("bob.cbor", bob_enc);
-    fs::write("materialized.cbor", materialized_enc);
-    */
+    buffer.clear();
+    minicbor::encode(&thread, &mut buffer)
+        .expect("Failed to encode the materialized view to CBOR.");
+    eprintln!("Materialized: {}", minicbor::display(&buffer));
 }
