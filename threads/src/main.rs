@@ -5,8 +5,7 @@ use semilattice::{Map, Max, Redactable, SemiLattice, Set};
 pub type AID = String;
 
 /// A locally unique ID. This does not need to be globally consistent.
-// (owner ID, local total order of unique events observed under an AID)
-pub type LUID = (AID, usize);
+pub type MessageID = (AID, u64);
 
 pub type Reaction = String;
 
@@ -33,7 +32,7 @@ struct Comment {
     // FIXME: Set a syntactic constraint against the partial order DAG such
     // that this cannot express cycles.
     #[n(0)]
-    reply_to: Set<LUID>,
+    reply_to: Set<MessageID>,
     // Redactable versioned content of a comment.
     #[n(1)]
     content: Map<u64, Redactable<String>>,
@@ -41,50 +40,37 @@ struct Comment {
     reactions: Map<Reaction, Vote<2>>,
 }
 
-// Actor ID remapping
-
-// Each actor maintains a private mapping of Actor IDs to public keys; where a
-// public subset of this mapping is revealed only after the actor references
-// another actor's objects.
-
-// Exported slices contain only the contributions from each actor, which may
-// contain references to indices under other actors.
-
-// Importing slices thus requires rewriting any of these IDs to correspond with
-// the local mapping.
-
-// Actors are responsible for creating unique object IDs. Colliding IDs will
-// cause corresponding semilattice values to join, which may result in
-// unexpected data loss or further confusion.
-
-// An actor is a single device. Identities contain sets of actors.
-
 #[derive(Debug, Clone, minicbor::Encode, minicbor::Decode)]
 pub struct ThreadActor {
     #[n(0)]
     id: AID,
     #[n(1)]
-    counter: usize,
-    // Each comment is assigned a Locally Unique ID.
+    device_id: u64,
     #[n(2)]
-    threads: Map<LUID, Comment>,
+    counter: u64,
+    #[n(3)]
+    threads: Map<AID, Map<u64, Comment>>,
 }
 
 impl ThreadActor {
-    fn new(id: AID) -> Self {
+    fn new(id: AID, device_id: u64) -> Self {
         Self {
             threads: Default::default(),
             id,
+            device_id,
             counter: 0,
         }
     }
 
-    fn new_thread(&mut self, message: String) -> LUID {
-        let count = self.counter;
+    fn comment(&mut self, id: MessageID) -> &mut Comment {
+        self.threads.entry(id.0).entry(id.1)
+    }
+
+    fn new_thread(&mut self, message: String) -> MessageID {
+        let count = (self.counter << 16) + self.device_id;
         self.counter += 1;
 
-        self.threads
-            .entry((self.id.clone(), count))
+        self.comment((self.id.clone(), count))
             .content
             .entry(0)
             .join_assign(Redactable::Data(message));
@@ -92,59 +78,55 @@ impl ThreadActor {
         (self.id.clone(), count)
     }
 
-    fn reply(&mut self, parent: LUID, message: String) -> LUID {
-        let count = self.counter;
+    fn reply(&mut self, parent: MessageID, message: String) -> MessageID {
+        let count = (self.counter << 16) + self.device_id;
         self.counter += 1;
 
-        self.threads
-            .entry((self.id.clone(), count))
-            .join_assign(Comment {
-                reply_to: Set::singleton(parent),
-                content: Map::singleton(0, Redactable::Data(message)),
-                reactions: Map::default(),
-            });
+        self.comment((self.id.clone(), count)).join_assign(Comment {
+            reply_to: Set::singleton(parent),
+            content: Map::singleton(0, Redactable::Data(message)),
+            reactions: Map::default(),
+        });
 
         (self.id.clone(), count)
     }
 
-    // FIXME: should not take the edit_count
-    fn edit(&mut self, target: LUID, message: String, edit_count: u64) {
-        self.threads
-            .entry(target)
-            .content
-            .entry(edit_count)
+    fn edit(&mut self, target: MessageID, message: String) {
+        let device_id = self.device_id;
+        let content = &mut self.comment(target).content;
+
+        content
+            .entry((u64::try_from(content.len()).unwrap() << 16) + device_id)
             .join_assign(Redactable::Data(message));
     }
 
-    fn redact(&mut self, target: LUID, version: u64) {
-        self.threads
-            .entry(target)
+    fn redact(&mut self, target: MessageID, version: u64) {
+        self.comment(target)
             .content
             .entry(version)
             .join_assign(Redactable::Redacted);
     }
 
-    fn react(&mut self, target: LUID, reaction: Reaction, vote: u64) {
-        self.threads
-            .entry(target)
+    fn react(&mut self, target: MessageID, reaction: Reaction, vote: u64) {
+        let id = self.id.clone();
+
+        self.comment(target)
             .reactions
             .entry(reaction)
             .0
-            .entry(self.id.clone())
+            .entry(id)
             .join_assign(Max(vote));
     }
 
     fn validate(&self) -> bool {
         for (k, v) in &*self.threads {
-            // if we are not the author of a comment, we better not edit it.
-            if k.0 != self.id {
-                if v.content.len() > 0 {
-                    return false;
-                }
-            }
-
-            // likewise, we cannot react on anyone else' behalf.
-            if v.reactions.values().any(|x| x.0.keys().any(|y| y != &self.id)) {
+            // we cannot impersonate other users
+            if !v.values().all(|c| {
+                (k == &self.id || c.content.len() == 0)
+                    && c.reactions
+                        .values()
+                        .all(|x| x.0.keys().all(|y| y == &self.id))
+            }) {
                 return false;
             }
         }
@@ -154,11 +136,11 @@ impl ThreadActor {
 }
 
 fn main() {
-    let mut alice = ThreadActor::new("Alice".to_owned());
+    let mut alice = ThreadActor::new("Alice".to_owned(), 0);
 
     let a0 = alice.new_thread("Hello world. I have this issue. [..]".to_owned());
 
-    let mut bob = ThreadActor::new("Bob".to_owned());
+    let mut bob = ThreadActor::new("Bob".to_owned(), 0);
 
     let b0 = bob.reply(a0.clone(), "Huh. Did you run the tests?".to_owned());
 
@@ -168,7 +150,7 @@ fn main() {
     // Alice may redact her message.
     alice.redact(a1.clone(), 0);
     // and submit a new version.
-    alice.edit(a1, "Ah! Test #4 failed. [..]".to_owned(), 1);
+    alice.edit(a1, "Ah! Test #4 failed. [..]".to_owned());
 
     let mut alice_enc = Vec::new();
     minicbor::encode(&alice.threads, &mut alice_enc)
@@ -194,7 +176,7 @@ fn main() {
     let mut eve = bob.clone();
 
     // If Eve tries to edit Alice' message...
-    eve.edit(a0.clone(), "I am Alice!".to_owned(), 1);
+    eve.edit(a0.clone(), "I am Alice!".to_owned());
 
     // her slice will no longer be valid.
     assert!(!eve.validate());
@@ -203,8 +185,7 @@ fn main() {
     eve = bob;
 
     // Likewise, she may not react on someone else' behalf.
-    eve.threads
-        .entry(a0)
+    eve.comment(a0)
         .reactions
         .entry(":love:".to_owned())
         .0
