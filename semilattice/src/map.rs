@@ -18,7 +18,7 @@ where
     K: Ord,
 {
     #[n(0)]
-    inner: BTreeMap<K, V>,
+    pub inner: BTreeMap<K, V>,
 }
 
 impl<K, V> Default for Map<K, V>
@@ -102,16 +102,6 @@ where
 {
     fn from(inner: BTreeMap<K, V>) -> Self {
         Self { inner }
-    }
-}
-
-impl<K, V> From<Map<K, V>> for BTreeMap<K, V>
-where
-    K: Ord,
-    V: SemiLattice,
-{
-    fn from(map: Map<K, V>) -> Self {
-        map.inner
     }
 }
 

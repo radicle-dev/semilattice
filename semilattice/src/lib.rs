@@ -89,8 +89,8 @@ pub fn partially_verify_semilattice_laws<S: SemiLattice + Debug + Clone>(
                 Some(Ordering::Greater | Ordering::Equal) => assert_eq!(&ab, &a),
                 Some(Ordering::Less) => assert_eq!(&ab, &b),
                 None => {
-                    assert_ne!(&ab, &a);
-                    assert_ne!(&ab, &b);
+                    assert!(ab > a);
+                    assert!(ab > b);
                 }
             }
         }

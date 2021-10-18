@@ -18,7 +18,7 @@ where
     K: Ord,
 {
     #[n(0)]
-    inner: BTreeSet<K>,
+    pub inner: BTreeSet<K>,
 }
 
 impl<K> Default for Set<K>

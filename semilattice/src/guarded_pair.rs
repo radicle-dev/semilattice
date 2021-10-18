@@ -8,9 +8,9 @@ use crate::SemiLattice;
 #[cfg_attr(feature = "minicbor", derive(minicbor::Encode, minicbor::Decode))]
 pub struct GuardedPair<G, V> {
     #[n(0)]
-    guard: G,
+    pub guard: G,
     #[n(1)]
-    value: V,
+    pub value: V,
 }
 
 impl<G, V> PartialOrd for GuardedPair<G, V>
