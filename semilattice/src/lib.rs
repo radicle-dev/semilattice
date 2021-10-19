@@ -35,10 +35,10 @@ pub use crate::{map::Map, set::Set};
 
 /// A bounded join-semilattice whose `PartialOrd` obeys the lattice
 /// semantics and whose `Default` is the bottom element of the lattice.
-pub trait SemiLattice: Default + PartialOrd {
-    fn join(self, other: Self) -> Self;
+pub trait SemiLattice<Other = Self>: Default + PartialOrd {
+    fn join(self, other: Other) -> Self;
 
-    fn join_assign(&mut self, other: Self) {
+    fn join_assign(&mut self, other: Other) {
         *self = mem::take(self).join(other);
     }
 }
