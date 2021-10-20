@@ -104,14 +104,14 @@ pub type Root = Map<ActorID, Slice>;
 
 #[derive(Debug)]
 pub struct Actor {
-    id: ActorID,
-    device_id: u64,
+    pub id: ActorID,
+    pub device_id: u64,
+    pub slice: Slice,
     counter: u64,
-    slice: Slice,
 }
 
 impl Actor {
-    fn new(id: ActorID, device_id: u64) -> Self {
+    pub fn new(id: ActorID, device_id: u64) -> Self {
         Self {
             id,
             device_id,
@@ -120,7 +120,7 @@ impl Actor {
         }
     }
 
-    fn new_thread(
+    pub fn new_thread(
         &mut self,
         title: String,
         message: String,
@@ -148,7 +148,7 @@ impl Actor {
         id
     }
 
-    fn reply(&mut self, parent: MessageID, message: String) -> MessageID {
+    pub fn reply(&mut self, parent: MessageID, message: String) -> MessageID {
         let id = (self.id, (self.counter << 16) + self.device_id);
         self.counter += 1;
 
@@ -162,7 +162,7 @@ impl Actor {
     }
 
     /// Fails if you attempt to edit someone else' message.
-    fn edit(&mut self, id: MessageID, message: String) -> Result<u64> {
+    pub fn edit(&mut self, id: MessageID, message: String) -> Result<u64> {
         if self.id != id.0 {
             return Err(Error::Impersonation);
         }
@@ -180,7 +180,7 @@ impl Actor {
     }
 
     /// Fails if you attempt to redact someone else' message.
-    fn redact(&mut self, id: MessageID, version: u64) -> Result {
+    pub fn redact(&mut self, id: MessageID, version: u64) -> Result {
         if self.id != id.0 {
             return Err(Error::Impersonation);
         }
@@ -195,7 +195,7 @@ impl Actor {
         Ok(())
     }
 
-    fn react(&mut self, id: MessageID, reaction: Reaction, vote: u64) {
+    pub fn react(&mut self, id: MessageID, reaction: Reaction, vote: u64) {
         self.slice
             .shared
             .entry(id)
@@ -204,7 +204,7 @@ impl Actor {
             .join_assign(Max(vote));
     }
 
-    fn adjust_tags(
+    pub fn adjust_tags(
         &mut self,
         id: MessageID,
         add: impl IntoIterator<Item = Reaction>,
@@ -218,67 +218,4 @@ impl Actor {
                 .into(),
         );
     }
-}
-
-fn main() {
-    // Alice has multiple devices
-    let mut alice_0 = Actor::new(ActorID::Alice, 0);
-    let mut alice_1 = Actor::new(ActorID::Alice, 1);
-
-    // Bob has one
-    let mut bob = Actor::new(ActorID::Bob, 0);
-
-    // Alice creates a new issue from her laptop
-    let a0 = alice_0.new_thread(
-        "Issue with feature X".to_owned(),
-        "Hello world. I have this issue [..]".to_owned(),
-        ["bug".to_owned(), "incorrect-tag".to_owned()],
-    );
-
-    // Bob responds and adjusts the tags for the thread
-    let b0 = bob.reply(a0, "Huh. Can you run the tests?".to_owned());
-    bob.adjust_tags(a0, ["regression".to_owned()], ["incorrect-tag".to_owned()]);
-
-    // Alice reacts form her phone
-    let _a1 = alice_1.react(b0, ":hourglass:".to_owned(), 1);
-
-    // responds from her laptop
-    let a2 = alice_0.reply(b0, "Ah! Test #3 failed. [..]".to_owned());
-    // edits her response from her phone
-    let _a2_edit_version = alice_1.edit(a2, "Ah! Test #4 failed. [..]".to_owned());
-    // and redacts her first version to hide her typo.
-    alice_1.redact(a2, 0).expect("Impersonation?");
-
-    // CBOR encode each dirty slice
-
-    let mut buffer = Vec::new();
-    minicbor::encode(&alice_0.slice, &mut buffer).expect("Failed to CBOR encode Alice#0.slice.");
-    println!("Alice#0: {}", minicbor::display(&buffer));
-
-    buffer.clear();
-    minicbor::encode(&alice_1.slice, &mut buffer).expect("Failed to CBOR encode Alice#1.slice.");
-    println!("Alice#1: {}", minicbor::display(&buffer));
-
-    let alice_combined = alice_0.slice.clone().join(alice_1.slice.clone());
-
-    buffer.clear();
-    minicbor::encode(&alice_combined, &mut buffer).expect("Failed to CBOR encode Alice.slice.");
-    println!("Alice: {}", minicbor::display(&buffer));
-
-    buffer.clear();
-    minicbor::encode(&bob.slice, &mut buffer).expect("Failed to CBOR encode Bob.slice.");
-    println!("Bob: {}", minicbor::display(&buffer));
-
-    let mut root = Root::default();
-    root.entry(ActorID::Alice).join_assign(alice_0.slice);
-    root.entry(ActorID::Alice).join_assign(alice_1.slice);
-    root.entry(ActorID::Bob).join_assign(bob.slice);
-
-    buffer.clear();
-    minicbor::encode(&root, &mut buffer).expect("Failed to CBOR encode root.");
-    println!("Materialized: {}", minicbor::display(&buffer));
-
-    println!();
-
-    detailed::Detailed::default().join(root).display();
 }

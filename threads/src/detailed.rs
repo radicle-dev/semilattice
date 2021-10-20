@@ -50,7 +50,11 @@ impl SemiLattice<Root> for Detailed {
                     threads.entry(id).titles.join_assign(titles);
                 }
                 for br in &*reply_to {
-                    self.messages.entry(br.0).entry(br.1).backrefs.insert((actor, id));
+                    self.messages
+                        .entry(br.0)
+                        .entry(br.1)
+                        .backrefs
+                        .insert((actor, id));
                 }
                 self.messages.entry(actor).entry(id).join_assign(Comment {
                     reply_to: reply_to,
@@ -72,8 +76,7 @@ impl SemiLattice<Root> for Detailed {
 
                 if tags.len() > 0 {
                     self.threads.entry(aid).entry(id).tags.join_assign(
-                        tags
-                            .inner
+                        tags.inner
                             .into_iter()
                             .map(|(r, v)| (r, Vote(Map::singleton(actor, v))))
                             .collect::<BTreeMap<_, _>>()
@@ -114,9 +117,22 @@ impl Detailed {
                 let mut stack = vec![(0, (*aid, *id))];
 
                 while let Some((depth, (aid, id))) = stack.pop() {
-                    let message = self.messages.inner.get(&aid).expect("Expected aid").get(&id).expect("Expected id.");
+                    let message = self
+                        .messages
+                        .inner
+                        .get(&aid)
+                        .expect("Expected aid")
+                        .get(&id)
+                        .expect("Expected id.");
 
-                    stack.extend(message.backrefs.inner.clone().into_iter().map(|x| (depth + 1, x)));
+                    stack.extend(
+                        message
+                            .backrefs
+                            .inner
+                            .clone()
+                            .into_iter()
+                            .map(|x| (depth + 1, x)),
+                    );
 
                     println!("Depth: {}", depth);
                     println!("Author: {:?} [{}]", aid, id);

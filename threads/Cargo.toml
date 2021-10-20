@@ -8,15 +8,23 @@ publish = false
 
 [dependencies.semilattice]
 path = "../semilattice"
+default-features = false
 features = ["alloc", "minicbor"]
 
 [dependencies.serde]
 version = "1.0"
+default-features = false
 features = ["derive"]
-
-[dependencies.ciborium]
-version = "0.1.0"
 
 [dependencies.minicbor]
 version = "0.9.1"
+default-features = false
 features = ["derive", "alloc", "half"]
+
+[dependencies.git2]
+version = "0.13.23"
+default-features = false
+
+[dependencies.pico-args]
+version = "0.4.2"
+default-features = false

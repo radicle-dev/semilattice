@@ -10,9 +10,12 @@ proc-macro = true
 
 [dependencies.syn]
 version = "1.0.80"
+default-features = false
 
 [dependencies.proc-macro2]
 version = "1.0"
+default-features = false
 
 [dependencies.quote]
 version = "1.0"
+default-features = false
