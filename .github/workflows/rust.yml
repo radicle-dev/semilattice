@@ -34,5 +34,3 @@ jobs:
       run: cargo clippy --verbose --no-default-features
     - name: Run clippy (all features)
       run: cargo clippy --verbose --all-features
-    - name: Run threads example
-      run: cargo run --bin threads
