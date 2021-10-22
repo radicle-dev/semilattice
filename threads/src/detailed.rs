@@ -1,8 +1,44 @@
+use core::ops;
+
 use std::collections::BTreeMap;
 
 use semilattice::{GuardedPair, Map, Max, Redactable, SemiLattice, Set};
 
-use crate::{ActorID, MessageID, Owned, Reaction, Root, Shared, Tag, Vote};
+use crate::{ActorID, MessageID, Owned, Reaction, Root, Shared, Tag};
+
+#[derive(Default, Debug, Clone, SemiLattice, PartialEq, minicbor::Encode, minicbor::Decode)]
+#[cbor(transparent)]
+pub struct Vote<const N: usize>(#[n(0)] Map<ActorID, Max<u64>>);
+
+impl<const N: usize> ops::Deref for Vote<N> {
+    type Target = Map<ActorID, Max<u64>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<const N: usize> ops::DerefMut for Vote<N> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<const N: usize> Vote<N> {
+    pub fn aggregate(&self) -> [usize; N] {
+        let mut res = [0; N];
+
+        for v in self.values() {
+            // modulo for arbitrary N isn't efficient, but if N is always a
+            // power of two, this becomes a bit-mask. Any excess values could
+            // be reserved or may be considered equivalent to the highest
+            // element.
+            res[v.0 as usize % N] += 1;
+        }
+
+        res
+    }
+}
 
 #[derive(Default, Debug, Clone, SemiLattice, PartialEq, minicbor::Encode, minicbor::Decode)]
 struct Thread {
@@ -136,8 +172,8 @@ impl Detailed {
 
                     println!("Depth: {}", depth);
                     println!("Author: {:?} [{}]", aid, id);
-                    for (_, content) in &message.content.inner {
-                        println!("Body: {:?}", content);
+                    for (version, content) in &message.content.inner {
+                        println!("Body [{}]: {:?}", version, content);
                     }
                     println!();
                 }

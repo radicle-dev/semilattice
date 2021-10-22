@@ -1,3 +1,4 @@
+use core::mem;
 use semilattice::SemiLattice;
 use threads::{Actor, ActorID, Root};
 
@@ -6,11 +7,14 @@ use threads::{Actor, ActorID, Root};
 #[test]
 fn example_discussion_test_vector() {
     // Alice has multiple devices
-    let mut alice_0 = Actor::new(ActorID::Alice, 0);
-    let mut alice_1 = Actor::new(ActorID::Alice, 1);
+    let mut alice_0_slice = Default::default();
+    let mut alice_0 = Actor::new(&mut alice_0_slice, ActorID::Alice, 0);
+    let mut alice_1_slice = Default::default();
+    let mut alice_1 = Actor::new(&mut alice_1_slice, ActorID::Alice, 1);
 
     // Bob has one
-    let mut bob = Actor::new(ActorID::Bob, 0);
+    let mut bob_slice = Default::default();
+    let mut bob = Actor::new(&mut bob_slice, ActorID::Bob, 0);
 
     // Alice creates a new issue from her laptop
     let a0 = alice_0.new_thread(
@@ -29,9 +33,9 @@ fn example_discussion_test_vector() {
     // responds from her laptop
     let a2 = alice_0.reply(b0, "Ah! Test #3 failed. [..]".to_owned());
     // edits her response from her phone
-    let _a2_edit_version = alice_1.edit(a2, "Ah! Test #4 failed. [..]".to_owned());
+    let _a2_edit_version = alice_1.edit(a2.1, "Ah! Test #4 failed. [..]".to_owned());
     // and redacts her first version to hide her typo.
-    alice_1.redact(a2, 0).expect("Impersonation?");
+    alice_1.redact(a2.1, 0);
 
     // CBOR encode each actor's slices.
 
@@ -105,9 +109,11 @@ fn example_discussion_test_vector() {
     );
 
     let mut root = Root::default();
-    root.entry(ActorID::Alice).join_assign(alice_0.slice);
-    root.entry(ActorID::Alice).join_assign(alice_1.slice);
-    root.entry(ActorID::Bob).join_assign(bob.slice);
+    root.entry(ActorID::Alice)
+        .join_assign(mem::take(alice_0.slice));
+    root.entry(ActorID::Alice)
+        .join_assign(mem::take(alice_1.slice));
+    root.entry(ActorID::Bob).join_assign(mem::take(bob.slice));
 
     buffer.clear();
     minicbor::encode(&root, &mut buffer).expect("Failed to CBOR encode root.");

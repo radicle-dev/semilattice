@@ -1,18 +1,10 @@
 #![feature(map_first_last)]
 
-use core::ops;
 use std::collections::BTreeMap;
 
 use semilattice::{GuardedPair, Map, Max, Redactable, SemiLattice, Set};
 
 pub mod detailed;
-
-#[derive(Debug)]
-pub enum Error {
-    Impersonation,
-}
-
-pub type Result<T = (), E = Error> = core::result::Result<T, E>;
 
 /// An actor ID. Probably a public key.
 //pub type ActorID = minicbor::bytes::ByteArray<32>;
@@ -33,46 +25,27 @@ pub enum ActorID {
     Eve,
 }
 
+impl core::str::FromStr for ActorID {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "alice" => Ok(ActorID::Alice),
+            "bob" => Ok(ActorID::Bob),
+            "carol" => Ok(ActorID::Carol),
+            "dave" => Ok(ActorID::Dave),
+            "eve" => Ok(ActorID::Eve),
+            _ => Err(()),
+        }
+    }
+}
+
 /// A Message ID. An actor ID paired with a supposedly unique number. The actor
 /// is responsible for choosing a unique number.
 pub type MessageID = (ActorID, u64);
 
 pub type Reaction = String;
 pub type Tag = String;
-
-#[derive(Default, Debug, Clone, SemiLattice, PartialEq, minicbor::Encode, minicbor::Decode)]
-#[cbor(transparent)]
-pub struct Vote<const N: usize>(#[n(0)] Map<ActorID, Max<u64>>);
-
-impl<const N: usize> ops::Deref for Vote<N> {
-    type Target = Map<ActorID, Max<u64>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<const N: usize> ops::DerefMut for Vote<N> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl<const N: usize> Vote<N> {
-    pub fn aggregate(&self) -> [usize; N] {
-        let mut res = [0; N];
-
-        for v in self.values() {
-            // modulo for arbitrary N isn't efficient, but if N is always a
-            // power of two, this becomes a bit-mask. Any excess values could
-            // be reserved or may be considered equivalent to the highest
-            // element.
-            res[v.0 as usize % N] += 1;
-        }
-
-        res
-    }
-}
 
 #[derive(Clone, Default, Debug, PartialEq, SemiLattice, minicbor::Encode, minicbor::Decode)]
 pub struct Owned {
@@ -103,20 +76,20 @@ pub struct Slice {
 pub type Root = Map<ActorID, Slice>;
 
 #[derive(Debug)]
-pub struct Actor {
+pub struct Actor<'a> {
     pub id: ActorID,
     pub device_id: u64,
-    pub slice: Slice,
+    pub slice: &'a mut Slice,
     counter: u64,
 }
 
-impl Actor {
-    pub fn new(id: ActorID, device_id: u64) -> Self {
-        Self {
+impl Actor<'_> {
+    pub fn new(slice: &mut Slice, id: ActorID, device_id: u64) -> Actor {
+        Actor {
             id,
             device_id,
-            counter: 0,
-            slice: Default::default(),
+            counter: slice.owned.len().try_into().unwrap(),
+            slice,
         }
     }
 
@@ -161,47 +134,38 @@ impl Actor {
         id
     }
 
-    /// Fails if you attempt to edit someone else' message.
-    pub fn edit(&mut self, id: MessageID, message: String) -> Result<u64> {
-        if self.id != id.0 {
-            return Err(Error::Impersonation);
-        }
-
-        let content = &mut self.slice.owned.entry(id.1).content;
+    pub fn edit(&mut self, id: u64, message: String) -> u64 {
+        let content = &mut self.slice.owned.entry(id).content;
 
         // One greater than the latest version we have observed.
-        let version: u64 = content.last_key_value().map(|x| x.0 + 1).unwrap_or(0);
+        let version: u64 = content
+            .last_key_value()
+            .map(|x| (x.0 >> 16) + 1)
+            .unwrap_or(0);
 
         content
             .entry((version << 16) + self.device_id)
             .join_assign(Redactable::Data(message));
 
-        Ok(version)
+        version
     }
 
     /// Fails if you attempt to redact someone else' message.
-    pub fn redact(&mut self, id: MessageID, version: u64) -> Result {
-        if self.id != id.0 {
-            return Err(Error::Impersonation);
-        }
-
+    pub fn redact(&mut self, id: u64, version: u64) {
         self.slice
             .owned
-            .entry(id.1)
+            .entry(id)
             .content
             .entry(version)
             .join_assign(Redactable::Redacted);
-
-        Ok(())
     }
 
-    pub fn react(&mut self, id: MessageID, reaction: Reaction, vote: u64) {
-        self.slice
-            .shared
-            .entry(id)
-            .reactions
-            .entry(reaction)
-            .join_assign(Max(vote));
+    pub fn react(&mut self, id: MessageID, reaction: Reaction, vote: bool) {
+        let stored_vote = self.slice.shared.entry(id).reactions.entry(reaction);
+
+        if stored_vote.0 % 2 != vote as u64 {
+            stored_vote.0 += 1;
+        }
     }
 
     pub fn adjust_tags(
@@ -210,12 +174,27 @@ impl Actor {
         add: impl IntoIterator<Item = Reaction>,
         remove: impl IntoIterator<Item = Reaction>,
     ) {
-        self.slice.shared.entry(id).tags.join_assign(
-            add.into_iter()
-                .map(|x| (x, Max(1)))
-                .chain(remove.into_iter().map(|x| (x, Max(2))))
-                .collect::<BTreeMap<_, _>>()
-                .into(),
-        );
+        let tags = &mut self.slice.shared.entry(id).tags;
+
+        for tag in add {
+            let vote = tags.entry(tag);
+            // 0 = neutral, 1 = positive, 2 = negative, 3 = invalid
+            match vote.0 % 4 {
+                0 => vote.0 += 1,
+                1 => (),
+                2 => vote.0 += 3,
+                _ => vote.0 += 2,
+            }
+        }
+
+        for tag in remove {
+            let vote = tags.entry(tag);
+            match vote.0 % 4 {
+                0 => vote.0 += 2,
+                1 => vote.0 += 1,
+                2 => (),
+                _ => vote.0 += 3,
+            }
+        }
     }
 }
