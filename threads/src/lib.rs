@@ -80,7 +80,6 @@ pub struct Actor<'a> {
     pub id: ActorID,
     pub device_id: u64,
     pub slice: &'a mut Slice,
-    counter: u64,
 }
 
 impl Actor<'_> {
@@ -88,7 +87,6 @@ impl Actor<'_> {
         Actor {
             id,
             device_id,
-            counter: slice.owned.len().try_into().unwrap(),
             slice,
         }
     }
@@ -99,10 +97,9 @@ impl Actor<'_> {
         message: String,
         tags: impl IntoIterator<Item = String>,
     ) -> MessageID {
-        let id = (self.id, (self.counter << 16) + self.device_id);
-        self.counter += 1;
+        let id = (u64::try_from(self.slice.owned.len()).unwrap() << 16) + self.device_id;
 
-        self.slice.owned.entry(id.1).join_assign(Owned {
+        self.slice.owned.entry(id).join_assign(Owned {
             titles: GuardedPair {
                 guard: Max(0),
                 value: Set::singleton(title),
@@ -111,27 +108,26 @@ impl Actor<'_> {
             content: Map::singleton(0, Redactable::Data(message)),
         });
 
-        self.slice.shared.entry(id).tags.join_assign(
+        self.slice.shared.entry((self.id, id)).tags.join_assign(
             tags.into_iter()
                 .map(|x| (x, Max(1)))
                 .collect::<BTreeMap<_, _>>()
                 .into(),
         );
 
-        id
+        (self.id, id)
     }
 
     pub fn reply(&mut self, parent: MessageID, message: String) -> MessageID {
-        let id = (self.id, (self.counter << 16) + self.device_id);
-        self.counter += 1;
+        let id = (u64::try_from(self.slice.owned.len()).unwrap() << 16) + self.device_id;
 
-        self.slice.owned.entry(id.1).join_assign(Owned {
+        self.slice.owned.entry(id).join_assign(Owned {
             titles: Default::default(),
             reply_to: Set::singleton(parent),
             content: Map::singleton(0, Redactable::Data(message)),
         });
 
-        id
+        (self.id, id)
     }
 
     pub fn edit(&mut self, id: u64, message: String) -> u64 {
