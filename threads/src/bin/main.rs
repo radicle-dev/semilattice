@@ -122,7 +122,7 @@ fn main() -> Result<(), pico_args::Error> {
         "reply" => {
             actor.reply(
                 (
-                    parse_actor(&read_line("Reply to who?", &mut input).trim()),
+                    parse_actor(read_line("Reply to who?", &mut input).trim()),
                     read_line("Message ID:", &mut input)
                         .trim()
                         .parse()
@@ -163,7 +163,7 @@ fn main() -> Result<(), pico_args::Error> {
         }
         "react" => {
             let target_actor =
-                parse_actor(&read_line("Which actor authored the message?", &mut input).trim());
+                parse_actor(read_line("Which actor authored the message?", &mut input).trim());
 
             let message_id = read_line("Message ID:", &mut input)
                 .trim()
@@ -173,7 +173,7 @@ fn main() -> Result<(), pico_args::Error> {
             let line = read_line("Reaction:", &mut input);
             let mut reaction = line.trim();
             let mut positive = true;
-            if reaction.starts_with("-") {
+            if reaction.starts_with('-') {
                 reaction = &reaction[1..];
                 positive = false;
             }
@@ -185,7 +185,7 @@ fn main() -> Result<(), pico_args::Error> {
         }
         "tag" => {
             let message_id = (
-                parse_actor(&read_line("Which actor started the thread?", &mut input).trim()),
+                parse_actor(read_line("Which actor started the thread?", &mut input).trim()),
                 read_line("Message ID:", &mut input)
                     .trim()
                     .parse()
@@ -193,10 +193,10 @@ fn main() -> Result<(), pico_args::Error> {
             );
 
             let line = read_line("Add comma separated tags:", &mut input);
-            let additive = line.trim().split(",").map(|x| x.trim().to_owned());
+            let additive = line.trim().split(',').map(|x| x.trim().to_owned());
 
             let line = read_line("Remove comma separated tags:", &mut input);
-            let negative = line.trim().split(",").map(|x| x.trim().to_owned());
+            let negative = line.trim().split(',').map(|x| x.trim().to_owned());
 
             actor.adjust_tags(message_id, additive, negative);
 
@@ -212,7 +212,7 @@ fn main() -> Result<(), pico_args::Error> {
     }
 
     // write back our changes
-    if buffer.len() > 0 {
+    if !buffer.is_empty() {
         println!(
             "Written state to: {}",
             repo.reference(

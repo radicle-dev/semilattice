@@ -93,8 +93,8 @@ impl SemiLattice<Root> for Detailed {
                         .insert((actor, id));
                 }
                 self.messages.entry(actor).entry(id).join_assign(Comment {
-                    reply_to: reply_to,
-                    content: content,
+                    reply_to,
+                    content,
                     reactions: Map::default(),
                     backrefs: Set::default(),
                 });
