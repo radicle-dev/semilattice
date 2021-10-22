@@ -175,6 +175,9 @@ impl Detailed {
                     for (version, content) in &message.content.inner {
                         println!("Body [{}]: {:?}", version, content);
                     }
+                    for (reaction, votes) in &message.reactions.inner {
+                        println!("Reaction [{}]: {:?}", reaction, votes);
+                    }
                     println!();
                 }
             }
