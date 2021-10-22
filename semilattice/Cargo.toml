@@ -21,7 +21,7 @@ default-features = false
 version = "1.0"
 optional = true
 default-features = false
-features = ["derive"]
+features = ["derive", "alloc"]
 
 [dependencies.minicbor]
 version = "0.9.1"

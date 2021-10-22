@@ -28,7 +28,7 @@ fn example_discussion_test_vector() {
     bob.adjust_tags(a0, ["regression".to_owned()], ["incorrect-tag".to_owned()]);
 
     // Alice reacts form her phone
-    let _a1 = alice_1.react(b0, ":hourglass:".to_owned(), 1);
+    let _a1 = alice_1.react(b0, ":hourglass:".to_owned(), true);
 
     // responds from her laptop
     let a2 = alice_0.reply(b0, "Ah! Test #3 failed. [..]".to_owned());
