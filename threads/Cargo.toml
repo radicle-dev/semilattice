@@ -23,3 +23,15 @@ default-features = false
 [dependencies.pico-args]
 version = "0.4.2"
 default-features = false
+
+[dependencies.serde]
+version = "1.0.130"
+optional = true
+default-features = false
+features = ["derive"]
+
+[dependencies.serde_json]
+version = "1.0.68"
+optional = true
+default-features = false
+features = ["alloc"]

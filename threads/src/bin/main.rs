@@ -55,22 +55,43 @@ fn main() -> Result<(), pico_args::Error> {
         .expect("Failed to enter the 'threads's namespace.");
 
     let mut root = Root::default();
+    /* // Load materialized cache.
+    let mut root: Root = minicbor::decode(
+        repo.find_reference("refs/threads-materialized")
+            .map(|r| r.peel_to_blob().expect("Expected blob"))
+            .expect("Failed to lookup reference")
+            .content(),
+    )
+    .expect("Failed to decode");
+    */
 
-    for reference in repo
-        .references_glob("refs/*")
-        .expect("Failed to enumerate references")
-    {
-        let reference = reference.expect("Failed to lookup reference?");
-        let actor = parse_actor(&reference.name().expect("Invalid reference name")[5..]);
-        root.entry(actor).join_assign(
-            minicbor::decode(reference.peel_to_blob().expect("Expected blob!").content())
+    // Import each writer's slice.
+    let threads_tree = repo
+        .find_reference("refs/threads")
+        .and_then(|r| r.peel_to_tree());
+
+    if let Ok(ref tree) = threads_tree {
+        tree.walk(git2::TreeWalkMode::PreOrder, |_, entry| {
+            let actor = parse_actor(entry.name().expect("Invalid reference name"));
+            root.entry(actor).join_assign(
+                minicbor::decode(
+                    entry
+                        .to_object(&repo)
+                        .expect("Failed to lookup blob")
+                        .peel_to_blob()
+                        .expect("Expected blob!")
+                        .content(),
+                )
                 .expect("Invalid CBOR"),
-        );
+            );
+            git2::TreeWalkResult::Ok
+        })
+        .expect("Failed to walk tree.");
     }
 
     let mut actor = {
         let aid = parse_actor(&actor_name);
-        Actor::new(root.entry(aid), aid, 0)
+        Actor::new(root.entry(aid.clone()), aid, 0)
     };
 
     let input = io::stdin();
@@ -208,22 +229,118 @@ fn main() -> Result<(), pico_args::Error> {
             minicbor::encode(&Slice::default(), &mut buffer)
                 .expect("Failed to CBOR encode actor slice.");
         }
+        "import" => {
+            /*
+            #[derive(serde::Serialize, serde::Deserialize)]
+            struct Comment {
+                author_id: Option<String>,
+                body: String,
+            }
+
+            #[derive(serde::Serialize, serde::Deserialize)]
+            struct Issue {
+                title: String,
+                body: String,
+                author_id: Option<String>,
+                comments: Vec<Comment>,
+            }
+
+            use std::fs;
+
+            for path in fs::read_dir(
+                env!("GITHUB_ISSUE_IMPORT_PATH"),
+            ).expect("Failed to open directory. Does there exist a directory at GITHUB_ISSUE_IMPORT_PATH ?")
+            .map(|res| res.map(|e| e.path()))
+            {
+                let Issue { title, body, author_id, comments } = serde_json::from_str(
+                    &fs::read_to_string(path.expect("IO Error?")).expect("Failed to read file")
+                ).expect("Failed to decode JSON");
+
+                let author_id = author_id.unwrap_or("ghost".to_owned());
+                let thread_id = Actor::new(root.entry(author_id.clone()), author_id, 0).new_thread(title, body, []);
+
+                //print!(">");
+
+                for Comment { author_id, body } in comments {
+                let author_id = author_id.unwrap_or("ghost".to_owned());
+                    //print!(".");
+                    Actor::new(root.entry(author_id.clone()), author_id, 0).reply(thread_id.clone(), body);
+                }
+
+                //println!();
+            }
+
+            let mut tree = repo
+                .treebuilder(threads_tree.ok().as_ref())
+                .expect("Failed to create tree.");
+
+            let mut buffer = Vec::new();
+
+            for (name, user) in root.inner {
+                buffer.clear();
+                minicbor::encode(&user, &mut buffer)
+                    .expect("Failed to CBOR encode actor slice.");
+
+                tree.insert(
+                    &name,
+                    repo.blob(&buffer).expect("Failed to record blob."),
+                    0o160000,
+                )
+                .expect("Failed to insert blob into tree.");
+            }
+
+            let tree_oid = tree.write().expect("Failed to write tree.");
+
+            println!(
+                "Written state to: {}",
+                repo.reference("refs/threads", tree_oid, true, "log msg",)
+                    .expect("Failed to update reference")
+                    .name()
+                    .expect("Invalid reference name?")
+            );
+            */
+        }
+        "cache" => {
+            let mut buffer = Vec::new();
+            minicbor::encode(&root, &mut buffer).expect("Failed to CBOR encode root.");
+
+            println!(
+                "Written state to: {}",
+                repo.reference(
+                    "refs/threads-materialized",
+                    repo.blob(&buffer).expect("Failed to write blob"),
+                    true,
+                    "log msg",
+                )
+                .expect("Failed to update reference")
+                .name()
+                .expect("Invalid reference name?")
+            );
+        }
         _ => usage(2),
     }
 
     // write back our changes
     if !buffer.is_empty() {
+        let mut tree = repo
+            .treebuilder(threads_tree.ok().as_ref())
+            .expect("Failed to create tree.");
+
+        tree.insert(
+            &actor_name,
+            repo.blob(&buffer).expect("Failed to record blob."),
+            0o160000,
+        )
+        .expect("Failed to insert blob into tree.");
+
+        let tree_oid = tree.write().expect("Failed to write tree.");
+
         println!(
             "Written state to: {}",
-            repo.reference(
-                &*format!("refs/{}", actor_name),
-                repo.blob(&buffer).expect("Failed to record blob."),
-                true,
-                "log msg",
-            )
-            .expect("Failed to update reference")
-            .name()
-            .expect("Invalid reference name?")
+            repo.reference("refs/threads", tree_oid, true, "log msg",)
+                .expect("Failed to update reference")
+                .name()
+                .expect("Invalid reference name?")
         );
     }
 

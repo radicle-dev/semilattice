@@ -7,7 +7,8 @@ use semilattice::{GuardedPair, Map, Max, Redactable, SemiLattice, Set};
 pub mod detailed;
 
 /// An actor ID. Probably a public key.
-//pub type ActorID = minicbor::bytes::ByteArray<32>;
+pub type ActorID = String;
+/*
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, minicbor::Encode, minicbor::Decode,
 )]
@@ -39,6 +40,7 @@ impl core::str::FromStr for ActorID {
         }
     }
 }
+*/
 
 /// A Message ID. An actor ID paired with a supposedly unique number. The actor
 /// is responsible for choosing a unique number.
@@ -108,14 +110,18 @@ impl Actor<'_> {
             content: Map::singleton(0, Redactable::Data(message)),
         });
 
-        self.slice.shared.entry((self.id, id)).tags.join_assign(
-            tags.into_iter()
-                .map(|x| (x, Max(1)))
-                .collect::<BTreeMap<_, _>>()
-                .into(),
-        );
+        self.slice
+            .shared
+            .entry((self.id.clone(), id))
+            .tags
+            .join_assign(
+                tags.into_iter()
+                    .map(|x| (x, Max(1)))
+                    .collect::<BTreeMap<_, _>>()
+                    .into(),
+            );
 
-        (self.id, id)
+        (self.id.clone(), id)
     }
 
     pub fn reply(&mut self, parent: MessageID, message: String) -> MessageID {
@@ -127,7 +133,7 @@ impl Actor<'_> {
             content: Map::singleton(0, Redactable::Data(message)),
         });
 
-        (self.id, id)
+        (self.id.clone(), id)
     }
 
     pub fn edit(&mut self, id: u64, message: String) -> u64 {

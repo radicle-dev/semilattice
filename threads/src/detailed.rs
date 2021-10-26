@@ -71,7 +71,7 @@ pub struct Detailed {
 impl SemiLattice<Root> for Detailed {
     fn join(mut self, other: Root) -> Self {
         for (actor, slice) in other.inner {
-            let threads = self.threads.entry(actor);
+            let threads = self.threads.entry(actor.clone());
 
             for (
                 id,
@@ -87,34 +87,41 @@ impl SemiLattice<Root> for Detailed {
                 }
                 for br in &*reply_to {
                     self.messages
-                        .entry(br.0)
+                        .entry(br.0.clone())
                         .entry(br.1)
                         .backrefs
-                        .insert((actor, id));
+                        .insert((actor.clone(), id));
                 }
-                self.messages.entry(actor).entry(id).join_assign(Comment {
-                    reply_to,
-                    content,
-                    reactions: Map::default(),
-                    backrefs: Set::default(),
-                });
+                self.messages
+                    .entry(actor.clone())
+                    .entry(id)
+                    .join_assign(Comment {
+                        reply_to,
+                        content,
+                        reactions: Map::default(),
+                        backrefs: Set::default(),
+                    });
             }
 
             for ((aid, id), Shared { tags, reactions }) in slice.shared.inner {
-                self.messages.entry(aid).entry(id).reactions.join_assign(
-                    reactions
-                        .inner
-                        .into_iter()
-                        .map(|(r, v)| (r, Vote(Map::singleton(actor, v))))
-                        .collect::<BTreeMap<_, _>>()
-                        .into(),
-                );
+                self.messages
+                    .entry(aid.clone())
+                    .entry(id)
+                    .reactions
+                    .join_assign(
+                        reactions
+                            .inner
+                            .into_iter()
+                            .map(|(r, v)| (r, Vote(Map::singleton(actor.clone(), v))))
+                            .collect::<BTreeMap<_, _>>()
+                            .into(),
+                    );
 
                 if tags.len() > 0 {
-                    self.threads.entry(aid).entry(id).tags.join_assign(
+                    self.threads.entry(aid.clone()).entry(id).tags.join_assign(
                         tags.inner
                             .into_iter()
-                            .map(|(r, v)| (r, Vote(Map::singleton(actor, v))))
+                            .map(|(r, v)| (r, Vote(Map::singleton(actor.clone(), v))))
                             .collect::<BTreeMap<_, _>>()
                             .into(),
                     );
@@ -150,7 +157,7 @@ impl Detailed {
                 println!();
                 println!();
 
-                let mut stack = vec![(0, (*aid, *id))];
+                let mut stack = vec![(0, (aid.clone(), *id))];
 
                 while let Some((depth, (aid, id))) = stack.pop() {
                     let message = self
