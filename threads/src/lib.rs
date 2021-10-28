@@ -8,39 +8,6 @@ pub mod detailed;
 
 /// An actor ID. Probably a public key.
 pub type ActorID = String;
-/*
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, minicbor::Encode, minicbor::Decode,
-)]
-#[cbor(index_only)]
-pub enum ActorID {
-    #[n(0)]
-    Alice,
-    #[n(1)]
-    Bob,
-    #[n(2)]
-    Carol,
-    #[n(3)]
-    Dave,
-    #[n(4)]
-    Eve,
-}
-
-impl core::str::FromStr for ActorID {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "alice" => Ok(ActorID::Alice),
-            "bob" => Ok(ActorID::Bob),
-            "carol" => Ok(ActorID::Carol),
-            "dave" => Ok(ActorID::Dave),
-            "eve" => Ok(ActorID::Eve),
-            _ => Err(()),
-        }
-    }
-}
-*/
 
 /// A Message ID. An actor ID paired with a supposedly unique number. The actor
 /// is responsible for choosing a unique number.
@@ -140,13 +107,13 @@ impl Actor<'_> {
         let content = &mut self.slice.owned.entry(id).content;
 
         // One greater than the latest version we have observed.
-        let version: u64 = content
+        let version: u64 = (content
             .last_key_value()
             .map(|x| (x.0 >> 16) + 1)
-            .unwrap_or(0);
+            .unwrap_or(0) << 16) + self.device_id;
 
         content
-            .entry((version << 16) + self.device_id)
+            .entry(version)
             .join_assign(Redactable::Data(message));
 
         version
