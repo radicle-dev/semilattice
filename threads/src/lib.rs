@@ -42,7 +42,11 @@ pub struct Slice {
     shared: Map<MessageID, Shared>,
 }
 
-pub type Root = Map<ActorID, Slice>;
+#[derive(Clone, Default, Debug, PartialEq, SemiLattice, minicbor::Encode, minicbor::Decode)]
+pub struct Root {
+    #[n(0)]
+    pub inner: Map<ActorID, Slice>,
+}
 
 #[derive(Debug)]
 pub struct Actor<'a> {
@@ -68,7 +72,7 @@ impl Actor<'_> {
     ) -> MessageID {
         let id = (u64::try_from(self.slice.owned.len()).unwrap() << 16) + self.device_id;
 
-        self.slice.owned.entry(id).join_assign(Owned {
+        self.slice.owned.entry_mut(id).join_assign(Owned {
             titles: GuardedPair {
                 guard: Max(0),
                 value: Set::singleton(title),
@@ -79,7 +83,7 @@ impl Actor<'_> {
 
         self.slice
             .shared
-            .entry((self.id.clone(), id))
+            .entry_mut((self.id.clone(), id))
             .tags
             .join_assign(
                 tags.into_iter()
@@ -94,7 +98,7 @@ impl Actor<'_> {
     pub fn reply(&mut self, parent: MessageID, message: String) -> MessageID {
         let id = (u64::try_from(self.slice.owned.len()).unwrap() << 16) + self.device_id;
 
-        self.slice.owned.entry(id).join_assign(Owned {
+        self.slice.owned.entry_mut(id).join_assign(Owned {
             titles: Default::default(),
             reply_to: Set::singleton(parent),
             content: Map::singleton(0, Redactable::Data(message)),
@@ -104,16 +108,18 @@ impl Actor<'_> {
     }
 
     pub fn edit(&mut self, id: u64, message: String) -> u64 {
-        let content = &mut self.slice.owned.entry(id).content;
+        let content = &mut self.slice.owned.entry_mut(id).content;
 
         // One greater than the latest version we have observed.
         let version: u64 = (content
             .last_key_value()
             .map(|x| (x.0 >> 16) + 1)
-            .unwrap_or(0) << 16) + self.device_id;
+            .unwrap_or(0)
+            << 16)
+            + self.device_id;
 
         content
-            .entry(version)
+            .entry_mut(version)
             .join_assign(Redactable::Data(message));
 
         version
@@ -123,14 +129,19 @@ impl Actor<'_> {
     pub fn redact(&mut self, id: u64, version: u64) {
         self.slice
             .owned
-            .entry(id)
+            .entry_mut(id)
             .content
-            .entry(version)
+            .entry_mut(version)
             .join_assign(Redactable::Redacted);
     }
 
     pub fn react(&mut self, id: MessageID, reaction: Reaction, vote: bool) {
-        let stored_vote = self.slice.shared.entry(id).reactions.entry(reaction);
+        let stored_vote = self
+            .slice
+            .shared
+            .entry_mut(id)
+            .reactions
+            .entry_mut(reaction);
 
         if stored_vote.0 % 2 != vote as u64 {
             stored_vote.0 += 1;
@@ -143,10 +154,10 @@ impl Actor<'_> {
         add: impl IntoIterator<Item = Reaction>,
         remove: impl IntoIterator<Item = Reaction>,
     ) {
-        let tags = &mut self.slice.shared.entry(id).tags;
+        let tags = &mut self.slice.shared.entry_mut(id).tags;
 
         for tag in add {
-            let vote = tags.entry(tag);
+            let vote = tags.entry_mut(tag);
             // 0 = neutral, 1 = positive, 2 = negative, 3 = invalid
             match vote.0 % 4 {
                 0 => vote.0 += 1,
@@ -157,7 +168,7 @@ impl Actor<'_> {
         }
 
         for tag in remove {
-            let vote = tags.entry(tag);
+            let vote = tags.entry_mut(tag);
             match vote.0 % 4 {
                 0 => vote.0 += 2,
                 1 => vote.0 += 1,
@@ -165,5 +176,94 @@ impl Actor<'_> {
                 _ => vote.0 += 3,
             }
         }
+    }
+}
+
+impl Root {
+    pub fn save_actor_slice_to_git(&self, repo: &git2::Repository, actor_name: &str) {
+        let mut buffer = Vec::new();
+
+        minicbor::encode(self.inner.entry(actor_name), &mut buffer)
+            .expect("Failed to CBOR encode actor slice.");
+
+        let threads_tree = repo
+            .find_reference("refs/threads")
+            .and_then(|r| r.peel_to_tree());
+
+        let mut tree = repo
+            .treebuilder(threads_tree.ok().as_ref())
+            .expect("Failed to create tree.");
+
+        tree.insert(
+            &actor_name,
+            repo.blob(&buffer).expect("Failed to record blob."),
+            0o160000,
+        )
+        .expect("Failed to insert blob into tree.");
+
+        let tree_oid = tree.write().expect("Failed to write tree.");
+
+        repo.reference("refs/threads", tree_oid, true, "log msg")
+            .expect("Failed to update reference");
+    }
+
+    // Can panic; but the panics are occur on their own threads as an
+    // implementation detail of git2...
+    pub fn coalate_slices_into_root_from_git(repo: &git2::Repository) -> Root {
+        let mut root = Root::default();
+
+        let threads_tree = repo
+            .find_reference("refs/threads")
+            .and_then(|r| r.peel_to_tree());
+
+        // Import each writer's slice.
+        if let Ok(ref tree) = threads_tree {
+            tree.walk(git2::TreeWalkMode::PreOrder, |_, entry| {
+                let actor = entry.name().expect("Invalid reference name").to_owned();
+                root.inner.entry_mut(actor).join_assign(
+                    minicbor::decode(
+                        entry
+                            .to_object(repo)
+                            .expect("Failed to lookup blob")
+                            .peel_to_blob()
+                            .expect("Expected blob!")
+                            .content(),
+                    )
+                    .expect("Invalid CBOR"),
+                );
+                git2::TreeWalkResult::Ok
+            })
+            .expect("Failed to walk tree.");
+        }
+
+        root
+    }
+
+    /// Panics if the cache reference does not exist, does not point to a blob,
+    /// or the blob cannot be read or decoded.
+    pub fn load_cache_from_git(repo: &git2::Repository) -> Root {
+        Root {
+            inner: minicbor::decode(
+                repo.find_reference("refs/threads-materialized")
+                    .map(|r| r.peel_to_blob().expect("Expected blob"))
+                    .expect("Failed to lookup reference")
+                    .content(),
+            )
+            .expect("Failed to decode"),
+        }
+    }
+
+    pub fn save_cache_to_git(&self, repo: &git2::Repository) {
+        let mut buffer = Vec::new();
+
+        minicbor::encode(&self.inner, &mut buffer).expect("Failed to CBOR encode root.");
+
+        repo.reference(
+            "refs/threads-materialized",
+            repo.blob(&buffer).expect("Failed to write blob"),
+            true,
+            "log msg",
+        )
+        .expect("Failed to update reference");
     }
 }

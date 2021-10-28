@@ -1,4 +1,5 @@
 use core::{
+    borrow::Borrow,
     cmp::{Ord, Ordering, PartialOrd},
     mem,
     ops::Deref,
@@ -141,7 +142,15 @@ where
         }
     }
 
-    pub fn entry(&mut self, key: K) -> &mut V {
+    pub fn entry<Q: ?Sized>(&self, key: &Q) -> Option<&V>
+    where
+        K: Borrow<Q> + Ord,
+        Q: Ord,
+    {
+        self.inner.get(key)
+    }
+
+    pub fn entry_mut(&mut self, key: K) -> &mut V {
         self.inner.entry(key).or_default()
     }
 }

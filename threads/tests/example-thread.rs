@@ -111,15 +111,18 @@ fn example_discussion_test_vector() {
     );
 
     let mut root = Root::default();
-    root.entry("alice".to_owned())
+    root.inner
+        .entry_mut("alice".to_owned())
         .join_assign(mem::take(alice_0.slice));
-    root.entry("alice".to_owned())
+    root.inner
+        .entry_mut("alice".to_owned())
         .join_assign(mem::take(alice_1.slice));
-    root.entry("bob".to_owned())
+    root.inner
+        .entry_mut("bob".to_owned())
         .join_assign(mem::take(bob.slice));
 
     buffer.clear();
-    minicbor::encode(&root, &mut buffer).expect("Failed to CBOR encode root.");
+    minicbor::encode(&root.inner, &mut buffer).expect("Failed to CBOR encode root.");
     assert_eq!(
         &buffer,
         &[

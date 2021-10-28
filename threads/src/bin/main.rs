@@ -1,8 +1,7 @@
-use core::str::FromStr;
 use std::io::{self, BufRead, Read, Write};
 
 use semilattice::SemiLattice;
-use threads::{detailed::Detailed, Actor, ActorID, Root, Slice};
+use threads::{detailed::Detailed, Actor, Root};
 
 fn usage(code: i32) -> ! {
     print!(
@@ -22,19 +21,11 @@ SUBCOMMANDS:
   reply         Reply to any message (WARNING: can create cycles if you lie)
   edit          Edit your own message
   react         React to any message
-  reset         Reset the actor's slice
   dump          Debug print the root object
 "
     );
 
     std::process::exit(code);
-}
-
-fn parse_actor(s: &str) -> ActorID {
-    ActorID::from_str(s).unwrap_or_else(|_| {
-        println!("I don't know who {} is.", s);
-        usage(1);
-    })
 }
 
 fn main() -> Result<(), pico_args::Error> {
@@ -54,45 +45,16 @@ fn main() -> Result<(), pico_args::Error> {
     repo.set_namespace("threads")
         .expect("Failed to enter the 'threads's namespace.");
 
-    let mut root = Root::default();
-    /* // Load materialized cache.
-    let mut root: Root = minicbor::decode(
-        repo.find_reference("refs/threads-materialized")
-            .map(|r| r.peel_to_blob().expect("Expected blob"))
-            .expect("Failed to lookup reference")
-            .content(),
-    )
-    .expect("Failed to decode");
-    */
+    print!("Loading cache... ");
+    std::io::stdout().flush().unwrap();
+    let mut root = Root::load_cache_from_git(&repo);
+    println!("done.");
 
-    // Import each writer's slice.
-    let threads_tree = repo
-        .find_reference("refs/threads")
-        .and_then(|r| r.peel_to_tree());
-
-    if let Ok(ref tree) = threads_tree {
-        tree.walk(git2::TreeWalkMode::PreOrder, |_, entry| {
-            let actor = parse_actor(entry.name().expect("Invalid reference name"));
-            root.entry(actor).join_assign(
-                minicbor::decode(
-                    entry
-                        .to_object(&repo)
-                        .expect("Failed to lookup blob")
-                        .peel_to_blob()
-                        .expect("Expected blob!")
-                        .content(),
-                )
-                .expect("Invalid CBOR"),
-            );
-            git2::TreeWalkResult::Ok
-        })
-        .expect("Failed to walk tree.");
-    }
-
-    let mut actor = {
-        let aid = parse_actor(&actor_name);
-        Actor::new(root.entry(aid.clone()), aid, 0)
-    };
+    let mut actor = Actor::new(
+        root.inner.entry_mut(actor_name.to_owned()),
+        actor_name.to_owned(),
+        0,
+    );
 
     let input = io::stdin();
     let mut input = input.lock();
@@ -117,8 +79,6 @@ fn main() -> Result<(), pico_args::Error> {
         tmp
     }
 
-    let mut buffer = Vec::new();
-
     match &*pargs.subcommand()?.expect("Expected subcommand!") {
         "dump" => {
             let mut dump = Vec::new();
@@ -129,6 +89,7 @@ fn main() -> Result<(), pico_args::Error> {
         }
         "list" => {
             Detailed::default().join(root).display();
+            return Ok(());
         }
         "new" => {
             actor.new_thread(
@@ -136,14 +97,11 @@ fn main() -> Result<(), pico_args::Error> {
                 read_to_string("Body:", &mut input).trim().to_owned(),
                 [],
             );
-
-            minicbor::encode(&actor.slice, &mut buffer)
-                .expect("Failed to CBOR encode actor slice.");
         }
         "reply" => {
             actor.reply(
                 (
-                    parse_actor(read_line("Reply to who?", &mut input).trim()),
+                    read_line("Reply to who?", &mut input).trim().to_owned(),
                     read_line("Message ID:", &mut input)
                         .trim()
                         .parse()
@@ -151,9 +109,6 @@ fn main() -> Result<(), pico_args::Error> {
                 ),
                 read_to_string("Body:", &mut input).trim().to_owned(),
             );
-
-            minicbor::encode(&actor.slice, &mut buffer)
-                .expect("Failed to CBOR encode actor slice.");
         }
         "edit" => {
             actor.edit(
@@ -163,9 +118,6 @@ fn main() -> Result<(), pico_args::Error> {
                     .expect("Invalid number"),
                 read_to_string("Body:", &mut input).trim().to_owned(),
             );
-
-            minicbor::encode(&actor.slice, &mut buffer)
-                .expect("Failed to CBOR encode actor slice.");
         }
         "redact" => {
             actor.redact(
@@ -178,13 +130,11 @@ fn main() -> Result<(), pico_args::Error> {
                     .parse()
                     .expect("Invalid number"),
             );
-
-            minicbor::encode(&actor.slice, &mut buffer)
-                .expect("Failed to CBOR encode actor slice.");
         }
         "react" => {
-            let target_actor =
-                parse_actor(read_line("Which actor authored the message?", &mut input).trim());
+            let target_actor = read_line("Which actor authored the message?", &mut input)
+                .trim()
+                .to_owned();
 
             let message_id = read_line("Message ID:", &mut input)
                 .trim()
@@ -200,13 +150,12 @@ fn main() -> Result<(), pico_args::Error> {
             }
 
             actor.react((target_actor, message_id), reaction.to_owned(), positive);
-
-            minicbor::encode(&actor.slice, &mut buffer)
-                .expect("Failed to CBOR encode actor slice.");
         }
         "tag" => {
             let message_id = (
-                parse_actor(read_line("Which actor started the thread?", &mut input).trim()),
+                read_line("Which actor started the thread?", &mut input)
+                    .trim()
+                    .to_owned(),
                 read_line("Message ID:", &mut input)
                     .trim()
                     .parse()
@@ -220,16 +169,9 @@ fn main() -> Result<(), pico_args::Error> {
             let negative = line.trim().split(',').map(|x| x.trim().to_owned());
 
             actor.adjust_tags(message_id, additive, negative);
-
-            minicbor::encode(&actor.slice, &mut buffer)
-                .expect("Failed to CBOR encode actor slice.");
-        }
-        "reset" => {
-            // clear user slice
-            minicbor::encode(&Slice::default(), &mut buffer)
-                .expect("Failed to CBOR encode actor slice.");
         }
         "import" => {
+            panic!("GitHub issue import has been disabled. Edit the code to play with this.");
             /*
             #[derive(serde::Serialize, serde::Deserialize)]
             struct Comment {
@@ -257,14 +199,14 @@ fn main() -> Result<(), pico_args::Error> {
                 ).expect("Failed to decode JSON");
 
                 let author_id = author_id.unwrap_or("ghost".to_owned());
-                let thread_id = Actor::new(root.entry(author_id.clone()), author_id, 0).new_thread(title, body, []);
+                let thread_id = Actor::new(root.entry_mut(author_id.clone()), author_id, 0).new_thread(title, body, []);
 
                 //print!(">");
 
                 for Comment { author_id, body } in comments {
                 let author_id = author_id.unwrap_or("ghost".to_owned());
                     //print!(".");
-                    Actor::new(root.entry(author_id.clone()), author_id, 0).reply(thread_id.clone(), body);
+                    Actor::new(root.entry_mut(author_id.clone()), author_id, 0).reply(thread_id.clone(), body);
                 }
 
                 //println!();
@@ -300,49 +242,11 @@ fn main() -> Result<(), pico_args::Error> {
             );
             */
         }
-        "cache" => {
-            let mut buffer = Vec::new();
-            minicbor::encode(&root, &mut buffer).expect("Failed to CBOR encode root.");
-
-            println!(
-                "Written state to: {}",
-                repo.reference(
-                    "refs/threads-materialized",
-                    repo.blob(&buffer).expect("Failed to write blob"),
-                    true,
-                    "log msg",
-                )
-                .expect("Failed to update reference")
-                .name()
-                .expect("Invalid reference name?")
-            );
-        }
         _ => usage(2),
     }
 
-    // write back our changes
-    if !buffer.is_empty() {
-        let mut tree = repo
-            .treebuilder(threads_tree.ok().as_ref())
-            .expect("Failed to create tree.");
-
-        tree.insert(
-            &actor_name,
-            repo.blob(&buffer).expect("Failed to record blob."),
-            0o160000,
-        )
-        .expect("Failed to insert blob into tree.");
-
-        let tree_oid = tree.write().expect("Failed to write tree.");
-
-        println!(
-            "Written state to: {}",
-            repo.reference("refs/threads", tree_oid, true, "log msg",)
-                .expect("Failed to update reference")
-                .name()
-                .expect("Invalid reference name?")
-        );
-    }
+    root.save_actor_slice_to_git(&repo, &actor_name);
+    root.save_cache_to_git(&repo);
 
     Ok(())
 }
