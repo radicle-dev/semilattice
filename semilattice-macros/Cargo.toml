@@ -9,13 +9,13 @@ license = "MIT OR Apache-2.0"
 proc-macro = true
 
 [dependencies.syn]
-version = "1.0.80"
+version = "1.0.81"
 default-features = false
 
 [dependencies.proc-macro2]
-version = "1.0"
+version = "1.0.32"
 default-features = false
 
 [dependencies.quote]
-version = "1.0"
+version = "1.0.10"
 default-features = false
