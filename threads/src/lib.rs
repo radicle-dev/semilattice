@@ -16,6 +16,20 @@ pub type MessageID = (ActorID, u64);
 pub type Reaction = String;
 pub type Tag = String;
 
+pub type Oid = Vec<u8>;
+
+#[derive(
+    Default, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, minicbor::Encode, minicbor::Decode,
+)]
+struct Patchset {
+    #[n(0)]
+    target: Option<String>,
+    #[n(1)]
+    start: Oid,
+    #[n(2)]
+    end: Oid,
+}
+
 #[derive(Clone, Default, Debug, PartialEq, SemiLattice, minicbor::Encode, minicbor::Decode)]
 pub struct Owned {
     #[n(0)]
@@ -24,6 +38,8 @@ pub struct Owned {
     reply_to: Set<MessageID>,
     #[n(2)]
     content: Map<u64, Redactable<String>>,
+    #[n(3)]
+    commits: Map<u64, Set<Patchset>>,
 }
 
 #[derive(Clone, Default, Debug, PartialEq, SemiLattice, minicbor::Encode, minicbor::Decode)]
@@ -79,6 +95,7 @@ impl Actor<'_> {
             },
             reply_to: Set::default(),
             content: Map::singleton(0, Redactable::Data(message)),
+            commits: Map::default(),
         });
 
         self.slice
@@ -100,8 +117,12 @@ impl Actor<'_> {
 
         self.slice.owned.entry_mut(id).join_assign(Owned {
             titles: Default::default(),
+            // FIXME: this set should also contain the most recent comments
+            // from each actor along the reply-path since our last message in
+            // the chain.
             reply_to: Set::singleton(parent),
             content: Map::singleton(0, Redactable::Data(message)),
+            commits: Map::default(),
         });
 
         (self.id.clone(), id)
@@ -242,14 +263,15 @@ impl Root {
     /// Panics if the cache reference does not exist, does not point to a blob,
     /// or the blob cannot be read or decoded.
     pub fn load_cache_from_git(repo: &git2::Repository) -> Root {
-        Root {
-            inner: minicbor::decode(
-                repo.find_reference("refs/threads-materialized")
-                    .map(|r| r.peel_to_blob().expect("Expected blob"))
-                    .expect("Failed to lookup reference")
-                    .content(),
-            )
-            .expect("Failed to decode"),
+        if let Ok(r) = repo
+            .find_reference("refs/threads-materialized")
+            .map(|r| r.peel_to_blob().expect("Expected blob"))
+        {
+            Root {
+                inner: minicbor::decode(r.content()).expect("Failed to decode"),
+            }
+        } else {
+            Root::default()
         }
     }
 

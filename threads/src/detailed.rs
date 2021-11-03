@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use semilattice::{GuardedPair, Map, Max, Redactable, SemiLattice, Set};
 
-use crate::{ActorID, MessageID, Owned, Reaction, Root, Shared, Tag};
+use crate::{ActorID, MessageID, Owned, Patchset, Reaction, Root, Shared, Tag};
 
 #[derive(Default, Debug, Clone, SemiLattice, PartialEq, minicbor::Encode, minicbor::Decode)]
 #[cbor(transparent)]
@@ -58,6 +58,8 @@ struct Comment {
     reactions: Map<Reaction, Vote<2>>,
     #[n(3)]
     backrefs: Set<MessageID>,
+    #[n(4)]
+    commits: Map<u64, Set<Patchset>>,
 }
 
 #[derive(Default, Debug, Clone, SemiLattice, PartialEq, minicbor::Encode, minicbor::Decode)]
@@ -79,6 +81,7 @@ impl SemiLattice<Root> for Detailed {
                     titles,
                     reply_to,
                     content,
+                    commits,
                 },
             ) in slice.owned.inner
             {
@@ -100,6 +103,7 @@ impl SemiLattice<Root> for Detailed {
                         content,
                         reactions: Map::default(),
                         backrefs: Set::default(),
+                        commits,
                     });
             }
 
