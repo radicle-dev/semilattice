@@ -16,6 +16,7 @@ pub mod option;
 pub mod ord;
 pub mod pair;
 pub mod redactable;
+pub mod vec;
 
 pub use crate::{
     guarded_pair::GuardedPair,
@@ -23,6 +24,7 @@ pub use crate::{
     ord::{Max, Min},
     pair::Pair,
     redactable::Redactable,
+    vec::VecLattice,
 };
 
 #[cfg(feature = "alloc")]

@@ -1,8 +1,6 @@
-#![feature(map_first_last)]
-
 use std::collections::BTreeMap;
 
-use semilattice::{GuardedPair, Map, Max, Redactable, SemiLattice, Set};
+use semilattice::{Map, Max, Redactable, SemiLattice, Set, VecLattice};
 
 pub mod detailed;
 
@@ -33,29 +31,29 @@ struct Patchset {
 #[derive(Clone, Default, Debug, PartialEq, SemiLattice, minicbor::Encode, minicbor::Decode)]
 pub struct Owned {
     #[n(0)]
-    titles: GuardedPair<Max<u64>, Set<String>>,
+    titles: VecLattice<Set<String>>,
     #[n(1)]
-    reply_to: Set<MessageID>,
+    content: VecLattice<Redactable<String>>,
     #[n(2)]
-    content: Map<u64, Redactable<String>>,
-    #[n(3)]
-    commits: Map<u64, Set<Patchset>>,
+    commits: VecLattice<Set<Patchset>>,
 }
 
 #[derive(Clone, Default, Debug, PartialEq, SemiLattice, minicbor::Encode, minicbor::Decode)]
 pub struct Shared {
     #[n(0)]
-    tags: Map<Tag, Max<u64>>,
+    responses: Set<u64>,
     #[n(1)]
+    tags: Map<Tag, Max<u64>>,
+    #[n(2)]
     reactions: Map<Tag, Max<u64>>,
 }
 
 #[derive(Clone, Default, Debug, PartialEq, SemiLattice, minicbor::Encode, minicbor::Decode)]
 pub struct Slice {
     #[n(0)]
-    owned: Map<u64, Owned>,
+    owned: VecLattice<Owned>,
     #[n(1)]
-    shared: Map<MessageID, Shared>,
+    shared: Map<ActorID, Map<u64, Shared>>,
 }
 
 #[derive(Clone, Default, Debug, PartialEq, SemiLattice, minicbor::Encode, minicbor::Decode)]
@@ -67,17 +65,12 @@ pub struct Root {
 #[derive(Debug)]
 pub struct Actor<'a> {
     pub id: ActorID,
-    pub device_id: u64,
     pub slice: &'a mut Slice,
 }
 
 impl Actor<'_> {
-    pub fn new(slice: &mut Slice, id: ActorID, device_id: u64) -> Actor {
-        Actor {
-            id,
-            device_id,
-            slice,
-        }
+    pub fn new(slice: &mut Slice, id: ActorID) -> Actor {
+        Actor { id, slice }
     }
 
     pub fn new_thread(
@@ -86,21 +79,18 @@ impl Actor<'_> {
         message: String,
         tags: impl IntoIterator<Item = String>,
     ) -> MessageID {
-        let id = (u64::try_from(self.slice.owned.len()).unwrap() << 16) + self.device_id;
+        let id = self.slice.owned.len() as u64;
 
-        self.slice.owned.entry_mut(id).join_assign(Owned {
-            titles: GuardedPair {
-                guard: Max(0),
-                value: Set::singleton(title),
-            },
-            reply_to: Set::default(),
-            content: Map::singleton(0, Redactable::Data(message)),
-            commits: Map::default(),
+        self.slice.owned.push(Owned {
+            titles: VecLattice::singleton(Set::singleton(title)),
+            content: VecLattice::singleton(Redactable::Data(message)),
+            commits: VecLattice::default(),
         });
 
         self.slice
             .shared
-            .entry_mut((self.id.clone(), id))
+            .entry_mut(self.id.clone())
+            .entry_mut(id)
             .tags
             .join_assign(
                 tags.into_iter()
@@ -113,40 +103,33 @@ impl Actor<'_> {
     }
 
     pub fn reply(&mut self, parent: MessageID, message: String) -> MessageID {
-        let id = (u64::try_from(self.slice.owned.len()).unwrap() << 16) + self.device_id;
+        let id = self.slice.owned.len() as u64;
 
-        self.slice.owned.entry_mut(id).join_assign(Owned {
+        self.slice.owned.push(Owned {
             titles: Default::default(),
-            // FIXME: this set should also contain the most recent comments
-            // from each actor along the reply-path since our last message in
-            // the chain.
-            reply_to: Set::singleton(parent),
-            content: Map::singleton(0, Redactable::Data(message)),
-            commits: Map::default(),
+            content: VecLattice::singleton(Redactable::Data(message)),
+            commits: Default::default(),
         });
+
+        self.slice
+            .shared
+            .entry_mut(parent.0)
+            .entry_mut(parent.1)
+            .responses
+            .insert(id);
 
         (self.id.clone(), id)
     }
 
     pub fn edit(&mut self, id: u64, message: String) -> u64 {
         let content = &mut self.slice.owned.entry_mut(id).content;
+        let version = content.len() as u64;
 
-        // One greater than the latest version we have observed.
-        let version: u64 = (content
-            .last_key_value()
-            .map(|x| (x.0 >> 16) + 1)
-            .unwrap_or(0)
-            << 16)
-            + self.device_id;
-
-        content
-            .entry_mut(version)
-            .join_assign(Redactable::Data(message));
+        content.push(Redactable::Data(message));
 
         version
     }
 
-    /// Fails if you attempt to redact someone else' message.
     pub fn redact(&mut self, id: u64, version: u64) {
         self.slice
             .owned
@@ -160,7 +143,8 @@ impl Actor<'_> {
         let stored_vote = self
             .slice
             .shared
-            .entry_mut(id)
+            .entry_mut(id.0)
+            .entry_mut(id.1)
             .reactions
             .entry_mut(reaction);
 
@@ -175,7 +159,7 @@ impl Actor<'_> {
         add: impl IntoIterator<Item = Reaction>,
         remove: impl IntoIterator<Item = Reaction>,
     ) {
-        let tags = &mut self.slice.shared.entry_mut(id).tags;
+        let tags = &mut self.slice.shared.entry_mut(id.0).entry_mut(id.1).tags;
 
         for tag in add {
             let vote = tags.entry_mut(tag);

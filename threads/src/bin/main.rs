@@ -53,7 +53,6 @@ fn main() -> Result<(), pico_args::Error> {
     let mut actor = Actor::new(
         root.inner.entry_mut(actor_name.to_owned()),
         actor_name.to_owned(),
-        0,
     );
 
     let input = io::stdin();

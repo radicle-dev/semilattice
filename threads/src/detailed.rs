@@ -1,10 +1,10 @@
 use core::ops;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use semilattice::{GuardedPair, Map, Max, Redactable, SemiLattice, Set};
+use semilattice::{Map, Max, Redactable, SemiLattice, Set, VecLattice};
 
-use crate::{ActorID, MessageID, Owned, Patchset, Reaction, Root, Shared, Tag};
+use crate::{ActorID, MessageID, Owned, Patchset, Reaction, Root, Shared, Slice, Tag};
 
 #[derive(Default, Debug, Clone, SemiLattice, PartialEq, minicbor::Encode, minicbor::Decode)]
 #[cbor(transparent)]
@@ -41,98 +41,93 @@ impl<const N: usize> Vote<N> {
 }
 
 #[derive(Default, Debug, Clone, SemiLattice, PartialEq, minicbor::Encode, minicbor::Decode)]
-struct Thread {
-    #[n(0)]
-    titles: GuardedPair<Max<u64>, Set<String>>,
-    #[n(1)]
-    tags: Map<Tag, Vote<4>>,
-}
-
-#[derive(Default, Debug, Clone, SemiLattice, PartialEq, minicbor::Encode, minicbor::Decode)]
 struct Comment {
     #[n(0)]
-    reply_to: Set<MessageID>,
+    titles: VecLattice<Set<String>>,
     #[n(1)]
-    content: Map<u64, Redactable<String>>,
+    content: VecLattice<Redactable<String>>,
     #[n(2)]
-    reactions: Map<Reaction, Vote<2>>,
+    responses: Set<MessageID>,
     #[n(3)]
-    backrefs: Set<MessageID>,
+    tags: Map<Tag, Vote<4>>,
     #[n(4)]
-    commits: Map<u64, Set<Patchset>>,
+    reactions: Map<Reaction, Vote<2>>,
+    #[n(5)]
+    commits: VecLattice<Set<Patchset>>,
 }
 
 #[derive(Default, Debug, Clone, SemiLattice, PartialEq, minicbor::Encode, minicbor::Decode)]
 pub struct Detailed {
     #[n(0)]
-    threads: Map<ActorID, Map<u64, Thread>>,
+    threads: Set<MessageID>,
     #[n(1)]
-    messages: Map<ActorID, Map<u64, Comment>>,
+    comments: Map<ActorID, VecLattice<Comment>>,
 }
 
 impl SemiLattice<Root> for Detailed {
     fn join(mut self, other: Root) -> Self {
-        for (actor, slice) in other.inner.inner {
-            let threads = self.threads.entry_mut(actor.clone());
-
+        for (actor, Slice { owned, shared }) in other.inner.inner {
             for (
                 id,
                 Owned {
                     titles,
-                    reply_to,
                     content,
                     commits,
                 },
-            ) in slice.owned.inner
+            ) in owned.inner.into_iter().enumerate()
             {
-                if titles.value.len() > 0 {
-                    threads.entry_mut(id).titles.join_assign(titles);
+                let id = id as u64;
+                if !titles.is_empty() {
+                    self.threads.insert((actor.clone(), id));
                 }
-                for br in &*reply_to {
-                    self.messages
-                        .entry_mut(br.0.clone())
-                        .entry_mut(br.1)
-                        .backrefs
-                        .insert((actor.clone(), id));
-                }
-                self.messages
+
+                self.comments
                     .entry_mut(actor.clone())
                     .entry_mut(id)
                     .join_assign(Comment {
-                        reply_to,
+                        titles,
                         content,
                         reactions: Map::default(),
-                        backrefs: Set::default(),
+                        responses: Set::default(),
+                        tags: Map::default(),
                         commits,
                     });
             }
 
-            for ((aid, id), Shared { tags, reactions }) in slice.shared.inner {
-                self.messages
-                    .entry_mut(aid.clone())
-                    .entry_mut(id)
-                    .reactions
-                    .join_assign(
-                        reactions
-                            .inner
-                            .into_iter()
-                            .map(|(r, v)| (r, Vote(Map::singleton(actor.clone(), v))))
-                            .collect::<BTreeMap<_, _>>()
-                            .into(),
-                    );
-
-                if tags.len() > 0 {
-                    self.threads
+            for (aid, comments) in shared.inner {
+                for (
+                    id,
+                    Shared {
+                        tags,
+                        reactions,
+                        responses,
+                    },
+                ) in comments.inner
+                {
+                    self.comments
                         .entry_mut(aid.clone())
                         .entry_mut(id)
-                        .tags
-                        .join_assign(
-                            tags.inner
+                        .join_assign(Comment {
+                            reactions: reactions
+                                .inner
                                 .into_iter()
                                 .map(|(r, v)| (r, Vote(Map::singleton(actor.clone(), v))))
                                 .collect::<BTreeMap<_, _>>()
                                 .into(),
-                        );
+                            tags: tags
+                                .inner
+                                .into_iter()
+                                .map(|(r, v)| (r, Vote(Map::singleton(actor.clone(), v))))
+                                .collect::<BTreeMap<_, _>>()
+                                .into(),
+                            responses: responses
+                                .inner
+                                .into_iter()
+                                .map(|id| (actor.clone(), id))
+                                .collect::<BTreeSet<_>>()
+                                .into(),
+                            ..Default::default()
+                        });
                 }
             }
         }
@@ -142,60 +137,51 @@ impl SemiLattice<Root> for Detailed {
 }
 
 impl Detailed {
+    // An awful example UI.
     pub fn display(&self) {
-        // An awful example UI.
+        let mut stack = Vec::new();
 
-        for (aid, thread) in &self.threads.inner {
-            for (id, Thread { titles, tags }) in &thread.inner {
-                println!("Author: {:?} [{}]", aid, id);
-                for title in &titles.value.inner {
-                    println!("Title: {}", title);
-                }
+        for mid in &*self.threads {
+            stack.clear();
+            stack.push((0, mid));
+
+            while let Some((depth, id)) = stack.pop() {
+                let comment = self
+                    .comments
+                    .entry(&id.0)
+                    .expect("Expected aid")
+                    .entry(id.1)
+                    .expect("Expected id.");
+
+                stack.extend(comment.responses.inner.iter().map(|x| (depth + 1, x)));
+
+                println!("Depth: {}", depth);
+                println!("Author: {:?} [{}]", id.0, id.1);
 
                 let mut tag_votes = BTreeMap::new();
-                for (tag, votes) in &tags.inner {
+                for (tag, votes) in &*comment.tags {
                     let va = votes.aggregate();
                     *tag_votes.entry(tag).or_insert(0) += va[1] as i64 - va[2] as i64;
                 }
 
                 print!("Tags: ");
                 for (tag, score) in tag_votes.into_iter().filter(|(_, x)| *x > 0) {
-                    print!("{} ({}), ", tag, score);
+                    print!("{}, ({}), ", tag, score);
+                }
+                println!();
+
+                for (version, content) in comment.content.iter().enumerate() {
+                    println!("Body [{}]: {:?}", version, content);
+                }
+                print!("Reactions: ");
+                for (reaction, votes) in &*comment.reactions {
+                    print!("{} ({:?})", reaction, votes);
                 }
                 println!();
                 println!();
-
-                let mut stack = vec![(0, (aid.clone(), *id))];
-
-                while let Some((depth, (aid, id))) = stack.pop() {
-                    let message = self
-                        .messages
-                        .inner
-                        .get(&aid)
-                        .expect("Expected aid")
-                        .get(&id)
-                        .expect("Expected id.");
-
-                    stack.extend(
-                        message
-                            .backrefs
-                            .inner
-                            .clone()
-                            .into_iter()
-                            .map(|x| (depth + 1, x)),
-                    );
-
-                    println!("Depth: {}", depth);
-                    println!("Author: {:?} [{}]", aid, id);
-                    for (version, content) in &message.content.inner {
-                        println!("Body [{}]: {:?}", version, content);
-                    }
-                    for (reaction, votes) in &message.reactions.inner {
-                        println!("Reaction [{}]: {:?}", reaction, votes);
-                    }
-                    println!();
-                }
             }
+
+            println!("---");
         }
     }
 }
