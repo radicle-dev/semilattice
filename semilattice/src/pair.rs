@@ -4,7 +4,10 @@ use crate::{self as semilattice, SemiLattice};
 #[derive(Clone, Copy, Default, Debug, PartialEq, SemiLattice)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "minicbor", derive(minicbor::Encode, minicbor::Decode))]
-pub struct Pair<A, B>(#[n(0)] pub A, #[n(1)] pub B);
+pub struct Pair<A, B>(
+    #[cfg_attr(feature = "minicbor", n(0))] pub A,
+    #[cfg_attr(feature = "minicbor", n(1))] pub B,
+);
 
 #[macro_export]
 macro_rules! HList {

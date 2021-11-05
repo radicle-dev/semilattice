@@ -7,9 +7,9 @@ use crate::SemiLattice;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "minicbor", derive(minicbor::Encode, minicbor::Decode))]
 pub struct GuardedPair<G, V> {
-    #[n(0)]
+    #[cfg_attr(feature = "minicbor", n(0))]
     pub guard: G,
-    #[n(1)]
+    #[cfg_attr(feature = "minicbor", n(1))]
     pub value: V,
 }
 

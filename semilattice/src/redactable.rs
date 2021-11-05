@@ -10,11 +10,11 @@ use crate::SemiLattice;
 #[cfg_attr(feature = "minicbor", derive(minicbor::Encode, minicbor::Decode))]
 pub enum Redactable<T> {
     // FIXME: It is syntactically invalid to use this variant.
-    #[n(0)]
+    #[cfg_attr(feature = "minicbor", n(0))]
     Uninitialized,
-    #[n(1)]
-    Data(#[n(0)] T),
-    #[n(2)]
+    #[cfg_attr(feature = "minicbor", n(1))]
+    Data(#[cfg_attr(feature = "minicbor", n(0))] T),
+    #[cfg_attr(feature = "minicbor", n(2))]
     Redacted,
 }
 

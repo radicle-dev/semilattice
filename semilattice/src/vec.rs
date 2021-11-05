@@ -9,10 +9,13 @@ use alloc::{vec, vec::Vec};
 
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "minicbor", derive(minicbor::Encode, minicbor::Decode))]
-#[cbor(transparent)]
+#[cfg_attr(
+    feature = "minicbor",
+    derive(minicbor::Encode, minicbor::Decode),
+    cbor(transparent)
+)]
 pub struct VecLattice<T> {
-    #[n(0)]
+    #[cfg_attr(feature = "minicbor", n(0))]
     pub inner: Vec<T>,
 }
 

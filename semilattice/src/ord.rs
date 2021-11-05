@@ -6,13 +6,13 @@ use crate::SemiLattice;
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "minicbor", derive(minicbor::Encode, minicbor::Decode))]
-pub struct Min<T>(#[n(0)] pub T);
+pub struct Min<T>(#[cfg_attr(feature = "minicbor", n(0))] pub T);
 
 /// Selects the largest value of a totally ordered and bounded type.
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "minicbor", derive(minicbor::Encode, minicbor::Decode))]
-pub struct Max<T>(#[n(0)] pub T);
+pub struct Max<T>(#[cfg_attr(feature = "minicbor", n(0))] pub T);
 
 impl<T> Default for Min<T>
 where
