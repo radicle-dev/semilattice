@@ -35,8 +35,12 @@ impl Iteration {
     }
 
     pub fn unfinished(&mut self) -> bool {
-        self.rounds = self.rounds.saturating_sub(1);
-        self.rounds > 0 && self.changed.replace(false)
+        if self.changed.replace(false) {
+            self.rounds = self.rounds.saturating_sub(1);
+            self.rounds > 0
+        } else {
+            false
+        }
     }
 
     pub fn guard<'a, T>(&'a self, inner: &'a mut T) -> Guard<'a, T>
@@ -83,8 +87,7 @@ where
     T: DeferredRestore,
 {
     fn drop(&mut self) {
-        extern crate std;
-        if std::dbg!(self.inner.restore()) {
+        if self.inner.restore() {
             self.changed.set(true);
         }
     }
@@ -99,7 +102,7 @@ pub struct Simple<S> {
 
 impl<S> DeferredRestore for Simple<S>
 where
-    S: Semilattice + core::fmt::Debug,
+    S: Semilattice,
 {
     type Value = S;
 
@@ -123,12 +126,9 @@ where
         self.stable
             .join_assign(mem::replace(&mut self.recent, mem::take(&mut self.pending)));
 
-        extern crate std;
-        std::dbg!((&self.stable, &self.recent));
-
         // continue until stable >= recent
         matches!(
-            std::dbg!(self.stable.partial_cmp(&self.recent)),
+            self.stable.partial_cmp(&self.recent),
             None | Some(cmp::Ordering::Less)
         )
     }
@@ -180,5 +180,7 @@ fn check() {
         interval.join(&*x, |a, b| (a.lower.0 - 1, **b));
     }
 
-    assert_eq!(iteration.rounds, 45);
+    assert_eq!(iteration.rounds, 46);
+    assert_eq!(x.pending, Max::default());
+    assert_eq!(interval.pending, Interval::default());
 }

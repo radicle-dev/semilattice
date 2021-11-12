@@ -1,6 +1,6 @@
 #![no_std]
 #![forbid(unsafe_code)]
-#![feature(slice_partition_dedup, generic_associated_types)]
+#![cfg_attr(feature = "alloc", feature(slice_partition_dedup))]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
