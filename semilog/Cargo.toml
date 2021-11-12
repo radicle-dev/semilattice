@@ -1,5 +1,5 @@
 [package]
-name = "semilattice"
+name = "semilog"
 authors = ["Sofia <D20F2B901893DA801CF51D6E33680DA3EACB1E39>"]
 version = "0.1.0"
 edition = "2021"
@@ -10,11 +10,12 @@ include = ["src/**/*", "LICENSE-*", "README.md"]
 default = ["alloc"]
 alloc = []
 
-[dependencies.semilattice-macros]
-path = "../semilattice-macros"
+[dependencies.semilog-macros]
+version = "0.1.0"
+path = "../semilog-macros"
 
-[dependencies.num]
-version = "0.4.0"
+[dependencies.num-traits]
+version = "0.2.14"
 default-features = false
 
 [dependencies.serde]

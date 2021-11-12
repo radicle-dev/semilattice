@@ -1,5 +1,5 @@
 [package]
-name = "semilattice-macros"
+name = "semilog-macros"
 authors = ["Sofia <D20F2B901893DA801CF51D6E33680DA3EACB1E39>"]
 version = "0.1.0"
 edition = "2021"

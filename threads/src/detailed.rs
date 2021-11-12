@@ -1,17 +1,17 @@
 use core::ops;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
-use semilattice::{Map, Max, Redactable, SemiLattice, Set, VecLattice};
+use semilog::{MapLattice, Max, Redactable, Semilattice, SetLattice, VecLattice};
 
 use crate::{ActorID, MessageID, Owned, Patchset, Reaction, Root, Shared, Slice, Tag};
 
-#[derive(Default, Debug, Clone, SemiLattice, PartialEq, minicbor::Encode, minicbor::Decode)]
+#[derive(Default, Debug, Clone, Semilattice, PartialEq, minicbor::Encode, minicbor::Decode)]
 #[cbor(transparent)]
-pub struct Vote<const N: usize>(#[n(0)] Map<ActorID, Max<u64>>);
+pub struct Vote<const N: usize>(#[n(0)] MapLattice<ActorID, Max<u64>>);
 
 impl<const N: usize> ops::Deref for Vote<N> {
-    type Target = Map<ActorID, Max<u64>>;
+    type Target = MapLattice<ActorID, Max<u64>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -28,7 +28,7 @@ impl<const N: usize> Vote<N> {
     pub fn aggregate(&self) -> [usize; N] {
         let mut res = [0; N];
 
-        for v in self.values() {
+        for (_, v) in &self.inner {
             // modulo for arbitrary N isn't efficient, but if N is always a
             // power of two, this becomes a bit-mask. Any excess values could
             // be reserved or may be considered equivalent to the highest
@@ -40,32 +40,32 @@ impl<const N: usize> Vote<N> {
     }
 }
 
-#[derive(Default, Debug, Clone, SemiLattice, PartialEq, minicbor::Encode, minicbor::Decode)]
+#[derive(Default, Debug, Clone, Semilattice, PartialEq, minicbor::Encode, minicbor::Decode)]
 struct Comment {
     #[n(0)]
-    titles: VecLattice<Set<String>>,
+    titles: VecLattice<SetLattice<String>>,
     #[n(1)]
     content: VecLattice<Redactable<String>>,
     #[n(2)]
-    responses: Set<MessageID>,
+    responses: SetLattice<MessageID>,
     #[n(3)]
-    tags: Map<Tag, Vote<4>>,
+    tags: MapLattice<Tag, Vote<4>>,
     #[n(4)]
-    reactions: Map<Reaction, Vote<2>>,
+    reactions: MapLattice<Reaction, Vote<2>>,
     #[n(5)]
-    commits: VecLattice<Set<Patchset>>,
+    commits: VecLattice<SetLattice<Patchset>>,
 }
 
-#[derive(Default, Debug, Clone, SemiLattice, PartialEq, minicbor::Encode, minicbor::Decode)]
+#[derive(Default, Debug, Clone, Semilattice, PartialEq, minicbor::Encode, minicbor::Decode)]
 pub struct Detailed {
     #[n(0)]
-    threads: Set<MessageID>,
+    threads: SetLattice<MessageID>,
     #[n(1)]
-    comments: Map<ActorID, VecLattice<Comment>>,
+    comments: MapLattice<ActorID, VecLattice<Comment>>,
 }
 
-impl SemiLattice<Root> for Detailed {
-    fn join(mut self, other: Root) -> Self {
+impl Detailed {
+    pub fn join_root(mut self, other: Root) -> Self {
         for (actor, Slice { owned, shared }) in other.inner.inner {
             for (
                 id,
@@ -82,14 +82,14 @@ impl SemiLattice<Root> for Detailed {
                 }
 
                 self.comments
-                    .entry_mut(actor.clone())
+                    .entry_mut(&actor)
                     .entry_mut(id)
                     .join_assign(Comment {
                         titles,
                         content,
-                        reactions: Map::default(),
-                        responses: Set::default(),
-                        tags: Map::default(),
+                        reactions: MapLattice::default(),
+                        responses: SetLattice::default(),
+                        tags: MapLattice::default(),
                         commits,
                     });
             }
@@ -105,27 +105,18 @@ impl SemiLattice<Root> for Detailed {
                 ) in comments.inner
                 {
                     self.comments
-                        .entry_mut(aid.clone())
+                        .entry_mut(&aid)
                         .entry_mut(id)
                         .join_assign(Comment {
-                            reactions: reactions
-                                .inner
-                                .into_iter()
-                                .map(|(r, v)| (r, Vote(Map::singleton(actor.clone(), v))))
-                                .collect::<BTreeMap<_, _>>()
-                                .into(),
-                            tags: tags
-                                .inner
-                                .into_iter()
-                                .map(|(r, v)| (r, Vote(Map::singleton(actor.clone(), v))))
-                                .collect::<BTreeMap<_, _>>()
-                                .into(),
-                            responses: responses
-                                .inner
-                                .into_iter()
-                                .map(|id| (actor.clone(), id))
-                                .collect::<BTreeSet<_>>()
-                                .into(),
+                            reactions: MapLattice::from_iter(reactions.iter().map(|(r, v)| {
+                                (r.clone(), Vote(MapLattice::singleton(actor.clone(), *v)))
+                            })),
+                            tags: MapLattice::from_iter(tags.iter().map(|(r, v)| {
+                                (r.clone(), Vote(MapLattice::singleton(actor.clone(), *v)))
+                            })),
+                            responses: SetLattice::from_iter(
+                                responses.iter().map(|id| (actor.clone(), id.0)),
+                            ),
                             ..Default::default()
                         });
                 }
@@ -141,7 +132,7 @@ impl Detailed {
     pub fn display(&self) {
         let mut stack = Vec::new();
 
-        for mid in &*self.threads {
+        for (mid, _) in &**self.threads {
             stack.clear();
             stack.push((0, mid));
 
@@ -153,7 +144,7 @@ impl Detailed {
                     .entry(id.1)
                     .expect("Expected id.");
 
-                stack.extend(comment.responses.inner.iter().map(|x| (depth + 1, x)));
+                stack.extend(comment.responses.into_iter().map(|x| (depth + 1, x)));
 
                 println!("Depth: {}", depth);
                 println!("Author: {:?} [{}]", id.0, id.1);

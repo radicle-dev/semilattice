@@ -1,6 +1,6 @@
 use core::cmp::{Ordering, PartialEq, PartialOrd};
 
-use crate::SemiLattice;
+use crate::Semilattice;
 
 /// Redactable data. The contained data is arbitrary, not a semilattice. Any
 /// attempts to change the underlying value, will collapse to the redacted
@@ -42,7 +42,7 @@ where
     }
 }
 
-impl<T> SemiLattice for Redactable<T>
+impl<T> Semilattice for Redactable<T>
 where
     T: PartialEq,
 {

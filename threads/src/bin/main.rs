@@ -1,6 +1,5 @@
 use std::io::{self, BufRead, Read, Write};
 
-use semilattice::SemiLattice;
 use threads::{detailed::Detailed, Actor, Root};
 
 fn usage(code: i32) -> ! {
@@ -50,10 +49,7 @@ fn main() -> Result<(), pico_args::Error> {
     let mut root = Root::load_cache_from_git(&repo);
     println!("done.");
 
-    let mut actor = Actor::new(
-        root.inner.entry_mut(actor_name.to_owned()),
-        actor_name.to_owned(),
-    );
+    let mut actor = Actor::new(root.inner.entry_mut(&actor_name), actor_name.to_owned());
 
     let input = io::stdin();
     let mut input = input.lock();
@@ -87,7 +83,7 @@ fn main() -> Result<(), pico_args::Error> {
             println!("{}", minicbor::display(&dump));
         }
         "list" => {
-            Detailed::default().join(root).display();
+            Detailed::default().join_root(root).display();
             return Ok(());
         }
         "new" => {

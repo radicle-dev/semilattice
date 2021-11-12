@@ -1,6 +1,4 @@
-use std::collections::BTreeMap;
-
-use semilattice::{Map, Max, Redactable, SemiLattice, Set, VecLattice};
+use semilog::{MapLattice, Max, Redactable, Semilattice, SetLattice, VecLattice};
 
 pub mod detailed;
 
@@ -28,38 +26,38 @@ struct Patchset {
     end: Oid,
 }
 
-#[derive(Clone, Default, Debug, PartialEq, SemiLattice, minicbor::Encode, minicbor::Decode)]
+#[derive(Clone, Default, Debug, PartialEq, Semilattice, minicbor::Encode, minicbor::Decode)]
 pub struct Owned {
     #[n(0)]
-    titles: VecLattice<Set<String>>,
+    titles: VecLattice<SetLattice<String>>,
     #[n(1)]
     content: VecLattice<Redactable<String>>,
     #[n(2)]
-    commits: VecLattice<Set<Patchset>>,
+    commits: VecLattice<SetLattice<Patchset>>,
 }
 
-#[derive(Clone, Default, Debug, PartialEq, SemiLattice, minicbor::Encode, minicbor::Decode)]
+#[derive(Clone, Default, Debug, PartialEq, Semilattice, minicbor::Encode, minicbor::Decode)]
 pub struct Shared {
     #[n(0)]
-    responses: Set<u64>,
+    responses: SetLattice<u64>,
     #[n(1)]
-    tags: Map<Tag, Max<u64>>,
+    tags: MapLattice<Tag, Max<u64>>,
     #[n(2)]
-    reactions: Map<Tag, Max<u64>>,
+    reactions: MapLattice<Tag, Max<u64>>,
 }
 
-#[derive(Clone, Default, Debug, PartialEq, SemiLattice, minicbor::Encode, minicbor::Decode)]
+#[derive(Clone, Default, Debug, PartialEq, Semilattice, minicbor::Encode, minicbor::Decode)]
 pub struct Slice {
     #[n(0)]
     owned: VecLattice<Owned>,
     #[n(1)]
-    shared: Map<ActorID, Map<u64, Shared>>,
+    shared: MapLattice<ActorID, MapLattice<u64, Shared>>,
 }
 
-#[derive(Clone, Default, Debug, PartialEq, SemiLattice, minicbor::Encode, minicbor::Decode)]
+#[derive(Clone, Default, Debug, PartialEq, Semilattice, minicbor::Encode, minicbor::Decode)]
 pub struct Root {
     #[n(0)]
-    pub inner: Map<ActorID, Slice>,
+    pub inner: MapLattice<ActorID, Slice>,
 }
 
 #[derive(Debug)]
@@ -82,20 +80,20 @@ impl Actor<'_> {
         let id = self.slice.owned.len() as u64;
 
         self.slice.owned.push(Owned {
-            titles: VecLattice::singleton(Set::singleton(title)),
+            titles: VecLattice::singleton(SetLattice::singleton(title)),
             content: VecLattice::singleton(Redactable::Data(message)),
             commits: VecLattice::default(),
         });
 
         self.slice
             .shared
-            .entry_mut(self.id.clone())
-            .entry_mut(id)
+            .entry_mut(&self.id)
+            .entry_mut(&id)
             .tags
             .join_assign(
                 tags.into_iter()
                     .map(|x| (x, Max(1)))
-                    .collect::<BTreeMap<_, _>>()
+                    .collect::<Vec<_>>()
                     .into(),
             );
 
@@ -113,8 +111,8 @@ impl Actor<'_> {
 
         self.slice
             .shared
-            .entry_mut(parent.0)
-            .entry_mut(parent.1)
+            .entry_mut(&parent.0)
+            .entry_mut(&parent.1)
             .responses
             .insert(id);
 
@@ -143,10 +141,10 @@ impl Actor<'_> {
         let stored_vote = self
             .slice
             .shared
-            .entry_mut(id.0)
-            .entry_mut(id.1)
+            .entry_mut(&id.0)
+            .entry_mut(&id.1)
             .reactions
-            .entry_mut(reaction);
+            .entry_mut(&reaction);
 
         if stored_vote.0 % 2 != vote as u64 {
             stored_vote.0 += 1;
@@ -159,10 +157,10 @@ impl Actor<'_> {
         add: impl IntoIterator<Item = Reaction>,
         remove: impl IntoIterator<Item = Reaction>,
     ) {
-        let tags = &mut self.slice.shared.entry_mut(id.0).entry_mut(id.1).tags;
+        let tags = &mut self.slice.shared.entry_mut(&id.0).entry_mut(&id.1).tags;
 
         for tag in add {
-            let vote = tags.entry_mut(tag);
+            let vote = tags.entry_mut(&tag);
             // 0 = neutral, 1 = positive, 2 = negative, 3 = invalid
             match vote.0 % 4 {
                 0 => vote.0 += 1,
@@ -173,7 +171,7 @@ impl Actor<'_> {
         }
 
         for tag in remove {
-            let vote = tags.entry_mut(tag);
+            let vote = tags.entry_mut(&tag);
             match vote.0 % 4 {
                 0 => vote.0 += 2,
                 1 => vote.0 += 1,
@@ -225,7 +223,7 @@ impl Root {
         if let Ok(ref tree) = threads_tree {
             tree.walk(git2::TreeWalkMode::PreOrder, |_, entry| {
                 let actor = entry.name().expect("Invalid reference name").to_owned();
-                root.inner.entry_mut(actor).join_assign(
+                root.inner.entry_mut(&actor).join_assign(
                     minicbor::decode(
                         entry
                             .to_object(repo)

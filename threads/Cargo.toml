@@ -6,8 +6,8 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 publish = false
 
-[dependencies.semilattice]
-path = "../semilattice"
+[dependencies.semilog]
+path = "../semilog"
 default-features = false
 features = ["alloc", "minicbor"]
 

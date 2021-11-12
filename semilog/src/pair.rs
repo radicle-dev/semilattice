@@ -1,8 +1,7 @@
-use crate::{self as semilattice, SemiLattice};
+use crate::{self as semilog, Semilattice};
 
 /// An anonymous pair of semilattices.
-#[derive(Clone, Copy, Default, Debug, PartialEq, SemiLattice)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Semilattice)]
 #[cfg_attr(feature = "minicbor", derive(minicbor::Encode, minicbor::Decode))]
 pub struct Pair<A, B>(
     #[cfg_attr(feature = "minicbor", n(0))] pub A,

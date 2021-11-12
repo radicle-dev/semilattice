@@ -3,7 +3,7 @@ use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 use syn::{parse_macro_input, parse_quote, Data, DeriveInput, Fields, GenericParam, Index};
 
-#[proc_macro_derive(SemiLattice)]
+#[proc_macro_derive(Semilattice)]
 pub fn derive_semilattice(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
@@ -13,9 +13,7 @@ pub fn derive_semilattice(input: proc_macro::TokenStream) -> proc_macro::TokenSt
 
         for param in &mut generics.params {
             if let GenericParam::Type(ref mut type_param) = *param {
-                type_param
-                    .bounds
-                    .push(parse_quote!(semilattice::SemiLattice));
+                type_param.bounds.push(parse_quote!(semilog::Semilattice));
             }
         }
 
@@ -23,7 +21,7 @@ pub fn derive_semilattice(input: proc_macro::TokenStream) -> proc_macro::TokenSt
         let join = semilattice_join(&input.data);
 
         quote!(
-            impl #impl_generics semilattice::SemiLattice for #name #ty_generics #where_clause {
+            impl #impl_generics semilog::Semilattice for #name #ty_generics #where_clause {
                 fn join(self, other: Self) -> Self {
                     #join
                 }
@@ -36,9 +34,7 @@ pub fn derive_semilattice(input: proc_macro::TokenStream) -> proc_macro::TokenSt
 
         for param in &mut generics.params {
             if let GenericParam::Type(ref mut type_param) = *param {
-                type_param
-                    .bounds
-                    .push(parse_quote!(semilattice::SemiLattice));
+                type_param.bounds.push(parse_quote!(semilog::Semilattice));
             }
         }
 
@@ -69,7 +65,7 @@ fn semilattice_join(data: &Data) -> TokenStream {
                 let fields = fields.named.iter().map(|f| {
                     let name = &f.ident;
                     quote_spanned! { f.span() =>
-                        #name: semilattice::SemiLattice::join(self.#name, other.#name),
+                        #name: semilog::Semilattice::join(self.#name, other.#name),
                     }
                 });
                 quote! {
@@ -82,7 +78,7 @@ fn semilattice_join(data: &Data) -> TokenStream {
                 let fields = fields.unnamed.iter().enumerate().map(|(i, f)| {
                     let index = Index::from(i);
                     quote_spanned! { f.span() =>
-                        semilattice::SemiLattice::join(self.#index, other.#index),
+                        semilog::Semilattice::join(self.#index, other.#index),
                     }
                 });
                 quote! {
@@ -108,7 +104,7 @@ fn partial_ord_cmp(data: &Data) -> TokenStream {
                     }
                 });
                 quote! {
-                    semilattice::partial_ord_helper([#(#orders)*])
+                    semilog::partial_ord_helper([#(#orders)*])
                 }
             }
             Fields::Unnamed(ref fields) => {
@@ -119,7 +115,7 @@ fn partial_ord_cmp(data: &Data) -> TokenStream {
                     }
                 });
                 quote! {
-                    semilattice::partial_ord_helper([#(#orders)*])
+                    semilog::partial_ord_helper([#(#orders)*])
                 }
             }
             Fields::Unit => {

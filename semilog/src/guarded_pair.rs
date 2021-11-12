@@ -1,6 +1,6 @@
 use core::cmp::{Ordering, PartialOrd};
 
-use crate::SemiLattice;
+use crate::Semilattice;
 
 /// A pair of semilattices, where the former acts as to version the latter.
 #[derive(Default, Debug, PartialEq, Clone, Copy)]
@@ -15,8 +15,8 @@ pub struct GuardedPair<G, V> {
 
 impl<G, V> PartialOrd for GuardedPair<G, V>
 where
-    G: SemiLattice,
-    V: SemiLattice,
+    G: Semilattice,
+    V: Semilattice,
 {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match self.guard.partial_cmp(&other.guard) {
@@ -26,10 +26,10 @@ where
     }
 }
 
-impl<G, V> SemiLattice for GuardedPair<G, V>
+impl<G, V> Semilattice for GuardedPair<G, V>
 where
-    G: SemiLattice,
-    V: SemiLattice,
+    G: Semilattice,
+    V: Semilattice,
 {
     fn join(self, other: Self) -> Self {
         match self.guard.partial_cmp(&other.guard) {

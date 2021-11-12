@@ -3,7 +3,7 @@ use core::{
     ops,
 };
 
-use crate::{partial_ord_helper, SemiLattice};
+use crate::{partial_ord_helper, Semilattice};
 
 use alloc::{vec, vec::Vec};
 
@@ -29,7 +29,7 @@ impl<T> Default for VecLattice<T> {
 
 impl<T> PartialOrd for VecLattice<T>
 where
-    T: SemiLattice,
+    T: Semilattice,
 {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         partial_ord_helper([
@@ -44,9 +44,9 @@ where
     }
 }
 
-impl<T> SemiLattice for VecLattice<T>
+impl<T> Semilattice for VecLattice<T>
 where
-    T: SemiLattice,
+    T: Semilattice,
 {
     fn join(mut self, other: Self) -> Self {
         match self.partial_cmp(&other) {
@@ -73,7 +73,7 @@ impl<T> ops::Deref for VecLattice<T> {
 
 impl<T> VecLattice<T>
 where
-    T: SemiLattice,
+    T: Semilattice,
 {
     pub fn singleton(v: T) -> Self {
         Self { inner: vec![v] }
