@@ -127,40 +127,33 @@ where
         let mut greater = self.inner.len() > other.inner.len();
         let mut less = self.inner.len() < other.inner.len();
 
-        let mut left = &*self.inner;
-        let mut right = &*other.inner;
-
-        while let Some((k1, v1)) = left.first() {
-            let step = gallop(right, |(k2, _)| k2 < k1);
-            // other contains keys we skipped over
-            if step != right {
-                less = true;
-                right = step;
+        // FIXME: optimize using gallop
+        for (k1, _) in &self.inner {
+            if let None = other.entry(k1) {
+                // other is missing a key from self
+                greater = true;
             }
+        }
 
-            match right.first() {
-                Some((k2, v2)) if k1 == k2 => match v1.partial_cmp(v2) {
+        for (k2, v2) in &other.inner {
+            if let Some(v1) = self.entry(k2) {
+                match v1.partial_cmp(v2) {
                     Some(cmp::Ordering::Less) if !greater => less = true,
                     Some(cmp::Ordering::Greater) if !less => greater = true,
                     Some(cmp::Ordering::Equal) => (),
                     _ => return None,
-                },
-                // self contains a key not in other
-                _ => {
-                    if !less {
-                        greater = true;
-                    } else {
-                        return None;
-                    }
                 }
+            } else {
+                // self is missing a key in other
+                less = true;
             }
-
-            // alternate left/right roles
-            mem::swap(&mut left, &mut right);
-            mem::swap(&mut greater, &mut less);
         }
 
-        Some(greater.cmp(&less))
+        if greater && less {
+            None
+        } else {
+            Some(greater.cmp(&less))
+        }
     }
 }
 
@@ -178,6 +171,23 @@ where
 
                 // sort is faster than unstable_sort with sequences of sorted tuples.
                 self.inner.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
+                let (dedup, dups) = self.inner.partition_dedup_by(|(k1, _), (k2, _)| k1 == k2);
+
+                // merge all non-ZST values.
+                if mem::size_of::<V>() > 0 {
+                    // partition_dedup_by maintains the order of `dedup` but does
+                    // not define the order of `dups`.
+                    for dup in dups {
+                        dedup[dedup
+                            .binary_search_by(|x| x.0.cmp(&dup.0))
+                            .expect("dedup contains dups by definition")]
+                        .1
+                        .join_assign(core::mem::take(&mut dup.1));
+                    }
+                }
+
+                let len = dedup.len();
+                self.inner.truncate(len);
 
                 self
             }
@@ -347,4 +357,22 @@ where
             other.for_each_recent(|b| self.to_add.push(func(a, b).into()));
         }
     }
+}
+
+#[test]
+fn check_laws() {
+    use crate::{partially_verify_semilattice_laws, Max};
+
+    let a = MapLattice::from_iter([("Alice", Max(123)), ("Bob", Max(50))]);
+    let b = MapLattice::from_iter([("Bob", Max(300)), ("Carol", Max(100))]);
+    let c = MapLattice::from_iter([("Carol", Max(150))]);
+
+    let d = a.clone().join(b.clone()).join(c.clone());
+
+    assert_eq!(
+        d,
+        MapLattice::from_iter([("Alice", Max(123)), ("Bob", Max(300)), ("Carol", Max(150)),])
+    );
+
+    partially_verify_semilattice_laws([a, b, c, d]);
 }

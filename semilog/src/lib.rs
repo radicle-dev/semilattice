@@ -77,7 +77,12 @@ pub fn partially_verify_semilattice_laws<S: Semilattice + fmt::Debug + Clone>(
 
     for a in samples.clone() {
         // All samples must be greater or equal to the bottom element.
-        assert!(bottom <= a);
+        assert!(
+            bottom <= a,
+            "Bottom is not less than or equal to: {:?}, {:?}",
+            a,
+            bottom.partial_cmp(&a)
+        );
 
         // ACI properties & partial order consistency
         for b in samples.clone() {
@@ -97,8 +102,20 @@ pub fn partially_verify_semilattice_laws<S: Semilattice + fmt::Debug + Clone>(
                 Some(cmp::Ordering::Greater | cmp::Ordering::Equal) => assert_eq!(&ab, &a),
                 Some(cmp::Ordering::Less) => assert_eq!(&ab, &b),
                 None => {
-                    assert!(ab > a);
-                    assert!(ab > b);
+                    assert!(
+                        ab > a,
+                        "Expected {:?} > {:?}; {:?}",
+                        ab,
+                        a,
+                        ab.partial_cmp(&a)
+                    );
+                    assert!(
+                        ab > b,
+                        "Expected {:?} > {:?}; {:?}",
+                        ab,
+                        b,
+                        ab.partial_cmp(&b)
+                    );
                 }
             }
         }

@@ -141,3 +141,27 @@ where
         self.inner.join(other, |x, y| (func(&x.0, y).into(), ()))
     }
 }
+
+#[test]
+fn check_laws() {
+    use crate::partially_verify_semilattice_laws;
+
+    let a = SetLattice::from_iter([("Alice", 123), ("Bob", 50)]);
+    let b = SetLattice::from_iter([("Bob", 300), ("Carol", 100)]);
+    let c = SetLattice::from_iter([("Carol", 150)]);
+
+    let d = a.clone().join(b.clone()).join(c.clone());
+
+    assert_eq!(
+        d,
+        SetLattice::from_iter([
+            ("Alice", 123),
+            ("Bob", 50),
+            ("Bob", 300),
+            ("Carol", 100),
+            ("Carol", 150),
+        ])
+    );
+
+    partially_verify_semilattice_laws([a, b, c, d]);
+}
